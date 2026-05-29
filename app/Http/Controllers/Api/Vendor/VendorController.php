@@ -71,15 +71,34 @@ class VendorController extends Controller
             ], 404);
         }
 
-        $totalProducts  = $vendor->products()->count();
-        $activeProducts = $vendor->products()
-                                 ->where('is_active', true)
-                                 ->count();
-        $totalViews     = $vendor->products()->sum('views_count');
-        $totalWishlists = \App\Models\Wishlist::whereIn(
-            'product_id',
-            $vendor->products()->pluck('id')
-        )->count();
+        $productIds = $vendor->products()->pluck('id');
+
+        $totalProducts    = $vendor->products()->count();
+        $activeProducts   = $vendor->products()->where('is_active', true)->count();
+        $inactiveProducts = $totalProducts - $activeProducts;
+
+        $outOfStock = $vendor->products()
+                             ->where('is_active', true)
+                             ->where('stock', '<=', 0)
+                             ->count();
+
+        $lowStock = $vendor->products()
+                           ->where('is_active', true)
+                           ->whereBetween('stock', [1, 5])
+                           ->count();
+
+        $inventoryValue = (float) $vendor->products()
+                                          ->where('is_active', true)
+                                          ->selectRaw('SUM(price * stock) AS total')
+                                          ->value('total');
+
+        $totalViews     = (int) $vendor->products()->sum('views_count');
+        $totalWishlists = \App\Models\Wishlist::whereIn('product_id', $productIds)->count();
+
+        $averageRating = (float) $vendor->products()
+                                         ->where('reviews_count', '>', 0)
+                                         ->avg('rating');
+        $totalReviews  = (int) $vendor->products()->sum('reviews_count');
 
         $recentProducts = $vendor->products()
                                  ->with(['category', 'primaryImage'])
@@ -87,15 +106,60 @@ class VendorController extends Controller
                                  ->limit(5)
                                  ->get();
 
+        $topProducts = $vendor->products()
+                              ->with(['category', 'primaryImage'])
+                              ->where('is_active', true)
+                              ->where('views_count', '>', 0)
+                              ->orderByDesc('views_count')
+                              ->limit(5)
+                              ->get();
+
+        // Items that need attention: out-of-stock first, then low-stock.
+        $needsAttention = $vendor->products()
+                                  ->with(['category', 'primaryImage'])
+                                  ->where('is_active', true)
+                                  ->where('stock', '<=', 5)
+                                  ->orderBy('stock')
+                                  ->limit(5)
+                                  ->get();
+
+        $setup = [
+            'has_logo'        => ! empty($vendor->store_logo),
+            'has_description' => ! empty($vendor->store_description),
+            'has_contact'     => ! empty($vendor->contact_phone) || ! empty($vendor->contact_email ?? null),
+            'has_address'     => ! empty($vendor->address),
+            'has_products'    => $totalProducts > 0,
+            'is_verified'     => (bool) $vendor->is_verified,
+        ];
+
+        $setupCompleted = collect($setup)->filter()->count();
+        $setupTotal     = count($setup);
+
         return response()->json([
-            'vendor'          => $vendor,
-            'stats'           => [
-                'total_products'  => $totalProducts,
-                'active_products' => $activeProducts,
-                'total_views'     => $totalViews,
-                'total_wishlists' => $totalWishlists,
+            'vendor'           => $vendor,
+            'stats'            => [
+                'total_products'    => $totalProducts,
+                'active_products'   => $activeProducts,
+                'inactive_products' => $inactiveProducts,
+                'out_of_stock'      => $outOfStock,
+                'low_stock'         => $lowStock,
+                'inventory_value'   => round($inventoryValue, 2),
+                'total_views'       => $totalViews,
+                'total_wishlists'   => $totalWishlists,
+                'average_rating'    => round($averageRating, 2),
+                'total_reviews'     => $totalReviews,
             ],
-            'recent_products' => $recentProducts,
+            'setup'            => [
+                'items'     => $setup,
+                'completed' => $setupCompleted,
+                'total'     => $setupTotal,
+                'percent'   => $setupTotal > 0
+                    ? (int) round(($setupCompleted / $setupTotal) * 100)
+                    : 0,
+            ],
+            'recent_products'  => $recentProducts,
+            'top_products'     => $topProducts,
+            'needs_attention'  => $needsAttention,
         ]);
     }
 
@@ -142,6 +206,73 @@ class VendorController extends Controller
         return response()->json([
             'message' => 'Store updated!',
             'vendor'  => $vendor,
+        ]);
+    }
+
+    // UPLOAD / REPLACE STORE LOGO
+    public function uploadLogo(Request $request)
+    {
+        $vendor = $this->resolveVendor($request);
+
+        if (! $vendor) {
+            return response()->json([
+                'message' => 'Vendor not found.',
+            ], 404);
+        }
+
+        $request->validate([
+            'logo' => 'required|image|mimes:jpg,jpeg,png,webp|max:4096',
+        ]);
+
+        // Remove the previous logo if it was a stored file (not an external URL).
+        if (
+            $vendor->store_logo &&
+            ! preg_match('#^https?://#i', $vendor->store_logo) &&
+            Storage::disk('public')->exists($vendor->store_logo)
+        ) {
+            Storage::disk('public')->delete($vendor->store_logo);
+        }
+
+        $file     = $request->file('logo');
+        $filename = 'vendor-' . $vendor->id . '-' . Str::random(12)
+                  . '.' . $file->getClientOriginalExtension();
+
+        $path = $file->storeAs('store-logos', $filename, 'public');
+
+        $vendor->store_logo = $path;
+        $vendor->save();
+
+        return response()->json([
+            'message' => 'Store logo updated!',
+            'vendor'  => $vendor->fresh(),
+        ]);
+    }
+
+    // REMOVE STORE LOGO
+    public function removeLogo(Request $request)
+    {
+        $vendor = $this->resolveVendor($request);
+
+        if (! $vendor) {
+            return response()->json([
+                'message' => 'Vendor not found.',
+            ], 404);
+        }
+
+        if (
+            $vendor->store_logo &&
+            ! preg_match('#^https?://#i', $vendor->store_logo) &&
+            Storage::disk('public')->exists($vendor->store_logo)
+        ) {
+            Storage::disk('public')->delete($vendor->store_logo);
+        }
+
+        $vendor->store_logo = null;
+        $vendor->save();
+
+        return response()->json([
+            'message' => 'Store logo removed.',
+            'vendor'  => $vendor->fresh(),
         ]);
     }
 

@@ -72,6 +72,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/brands', [VendorController::class, 'brands']);
         Route::get('/store', [VendorController::class, 'getStore']);
         Route::put('/store', [VendorController::class, 'updateStore']);
+        Route::post('/store/logo', [VendorController::class, 'uploadLogo']);
+        Route::delete('/store/logo', [VendorController::class, 'removeLogo']);
         Route::get('/products', [VendorController::class, 'myProducts']);
         Route::post('/products', [VendorController::class, 'createProduct']);
         Route::put('/products/{id}', [VendorController::class, 'updateProduct']);
