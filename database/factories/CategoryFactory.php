@@ -13,22 +13,27 @@ class CategoryFactory extends Factory
 {
     protected $model = Category::class;
 
+    private static int $sequence = 0;
+
     public function definition(): array
     {
-        $name = $this->faker->unique()->randomElement([
+        $names = [
             'Rods', 'Reels', 'Bait', 'Lures', 'Hooks',
             'Fishing Lines', 'Accessories', 'Apparel', 'Boats',
             'Tackle Boxes', 'Nets', 'Coolers', 'Waders', 'Sunglasses',
-        ]);
+        ];
 
         $icons = ['🎣', '🔄', '🪱', '🎯', '🪝', '🧵', '🎒', '👕', '🚤'];
+
+        $name = $names[static::$sequence % count($names)];
+        static::$sequence++;
 
         return [
             'name'        => $name,
             'slug'        => Str::slug($name) . '-' . Str::random(5),
-            'icon'        => $this->faker->randomElement($icons),
+            'icon'        => $icons[array_rand($icons)],
             'image'       => null,
-            'description' => $this->faker->sentence(8),
+            'description' => 'Fishing category for ' . strtolower($name) . '.',
             'is_active'   => true,
         ];
     }
