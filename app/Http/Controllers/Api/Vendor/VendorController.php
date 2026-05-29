@@ -286,7 +286,7 @@ class VendorController extends Controller
         }
 
         $products = $vendor->products()
-                           ->with(['category', 'brand', 'primaryImage'])
+                           ->with(['category', 'brand', 'primaryImage', 'images'])
                            ->latest()
                            ->paginate(20);
 
@@ -313,6 +313,8 @@ class VendorController extends Controller
             'original_price' => 'nullable|numeric|min:0',
             'stock'          => 'required|integer|min:0',
             'condition'      => 'nullable|in:new,used',
+            'images'         => 'nullable|array|max:8',
+            'images.*'       => 'image|mimes:jpg,jpeg,png,webp|max:4096',
         ]);
 
         $product = Product::create([
@@ -343,8 +345,89 @@ class VendorController extends Controller
 
         return response()->json([
             'message' => 'Product created!',
-            'product' => $product->load(['category', 'brand']),
+            'product' => $product->load(['category', 'brand', 'images']),
         ], 201);
+    }
+
+    // ADD MORE IMAGES TO AN EXISTING PRODUCT
+    public function addProductImages(Request $request, $id)
+    {
+        $product = $this->findOwnedProduct($request, $id);
+
+        $request->validate([
+            'images'   => 'required|array|max:8',
+            'images.*' => 'image|mimes:jpg,jpeg,png,webp|max:4096',
+        ]);
+
+        $startOrder = (int) $product->images()->max('sort_order') + 1;
+        $hasPrimary = $product->images()->where('is_primary', true)->exists();
+
+        $created = [];
+        foreach ($request->file('images') as $index => $image) {
+            $path = $image->store('products', 'public');
+            $created[] = ProductImage::create([
+                'product_id' => $product->id,
+                'image_path' => $path,
+                'is_primary' => ! $hasPrimary && $index === 0,
+                'sort_order' => $startOrder + $index,
+            ]);
+
+            if (! $hasPrimary && $index === 0) {
+                $hasPrimary = true;
+            }
+        }
+
+        return response()->json([
+            'message' => 'Images added.',
+            'images'  => $created,
+        ], 201);
+    }
+
+    // DELETE A SINGLE IMAGE FROM A PRODUCT
+    public function deleteProductImage(Request $request, $id, $imageId)
+    {
+        $product = $this->findOwnedProduct($request, $id);
+
+        $image = $product->images()->where('id', $imageId)->firstOrFail();
+        $wasPrimary = (bool) $image->is_primary;
+
+        if (
+            $image->image_path &&
+            ! preg_match('#^https?://#i', $image->image_path) &&
+            Storage::disk('public')->exists($image->image_path)
+        ) {
+            Storage::disk('public')->delete($image->image_path);
+        }
+        $image->delete();
+
+        // If the primary image was removed, promote the next one.
+        if ($wasPrimary) {
+            $next = $product->images()->orderBy('sort_order')->first();
+            if ($next) {
+                $next->update(['is_primary' => true]);
+            }
+        }
+
+        return response()->json([
+            'message' => 'Image deleted.',
+            'id'      => (int) $imageId,
+        ]);
+    }
+
+    // SET AN IMAGE AS THE PRODUCT'S PRIMARY
+    public function setPrimaryProductImage(Request $request, $id, $imageId)
+    {
+        $product = $this->findOwnedProduct($request, $id);
+
+        $image = $product->images()->where('id', $imageId)->firstOrFail();
+
+        $product->images()->update(['is_primary' => false]);
+        $image->update(['is_primary' => true]);
+
+        return response()->json([
+            'message' => 'Primary image updated.',
+            'id'      => (int) $imageId,
+        ]);
     }
 
     // UPDATE PRODUCT

@@ -79,6 +79,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/products/{id}', [VendorController::class, 'updateProduct']);
         Route::delete('/products/{id}', [VendorController::class, 'deleteProduct']);
         Route::post('/products/{id}/toggle', [VendorController::class, 'toggleProduct']);
+        Route::post('/products/{id}/images', [VendorController::class, 'addProductImages']);
+        Route::delete('/products/{id}/images/{imageId}', [VendorController::class, 'deleteProductImage']);
+        Route::post('/products/{id}/images/{imageId}/primary', [VendorController::class, 'setPrimaryProductImage']);
     });
 
     // ─── Admin-Only Routes ────────────────────────────────────
@@ -89,8 +92,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/profile/photo', [AdminProfileController::class, 'uploadPhoto']);
 
         // Vendor management
+        Route::get('/users', [VendorAdminController::class, 'eligibleUsers']);
         Route::get('/vendors', [VendorAdminController::class, 'index']);
         Route::post('/vendors', [VendorAdminController::class, 'storeVendor']);
+        Route::post('/vendors/assign', [VendorAdminController::class, 'assignVendor']);
         Route::delete('/vendors/{vendorId}/remove', [VendorAdminController::class, 'removeVendor']);
         Route::post('/vendors/{vendorId}/verify', [VendorAdminController::class, 'verifyStore']);
 

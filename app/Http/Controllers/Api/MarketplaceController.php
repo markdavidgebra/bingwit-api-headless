@@ -14,7 +14,7 @@ class MarketplaceController extends Controller
     // GET MARKETPLACE HOME DATA
     public function home()
     {
-        $featured   = Product::with(['category', 'brand', 'primaryImage'])
+        $featured   = Product::with(['category', 'brand', 'primaryImage', 'vendor'])
                               ->where('is_featured', true)
                               ->where('is_active', true)
                               ->latest()
@@ -22,7 +22,7 @@ class MarketplaceController extends Controller
                               ->get()
                               ->map(fn($p) => $this->formatProduct($p));
 
-        $trending   = Product::with(['category', 'brand', 'primaryImage'])
+        $trending   = Product::with(['category', 'brand', 'primaryImage', 'vendor'])
                               ->where('is_active', true)
                               ->orderByDesc('views_count')
                               ->limit(10)
@@ -33,7 +33,7 @@ class MarketplaceController extends Controller
                                ->withCount('products')
                                ->get();
 
-        $newArrivals = Product::with(['category', 'brand', 'primaryImage'])
+        $newArrivals = Product::with(['category', 'brand', 'primaryImage', 'vendor'])
                                ->where('is_active', true)
                                ->latest()
                                ->limit(10)
@@ -51,7 +51,7 @@ class MarketplaceController extends Controller
     // GET ALL PRODUCTS WITH FILTERS
     public function products(Request $request)
     {
-        $query = Product::with(['category', 'brand', 'primaryImage'])
+        $query = Product::with(['category', 'brand', 'primaryImage', 'vendor'])
                         ->where('is_active', true);
 
         // Filter by category
@@ -109,6 +109,7 @@ class MarketplaceController extends Controller
         $product = Product::with([
                         'category',
                         'brand',
+                        'vendor',
                         'images',
                         'reviews.user' => function ($q) {
                             $q->select('id', 'name', 'profile_picture');
@@ -128,7 +129,7 @@ class MarketplaceController extends Controller
         }
 
         // Get related products
-        $related = Product::with(['primaryImage'])
+        $related = Product::with(['primaryImage', 'vendor'])
                           ->where('category_id', $product->category_id)
                           ->where('id', '!=', $product->id)
                           ->where('is_active', true)
@@ -163,7 +164,7 @@ class MarketplaceController extends Controller
 
         $keyword  = $request->query('query');
 
-        $products = Product::with(['category', 'brand', 'primaryImage'])
+        $products = Product::with(['category', 'brand', 'primaryImage', 'vendor'])
                            ->where('is_active', true)
                            ->where(function ($q) use ($keyword) {
                                $q->where('name', 'like', "%{$keyword}%")
@@ -194,7 +195,7 @@ class MarketplaceController extends Controller
     {
         $category = Category::findOrFail($categoryId);
 
-        $products = Product::with(['brand', 'primaryImage'])
+        $products = Product::with(['brand', 'primaryImage', 'vendor'])
                            ->where('category_id', $categoryId)
                            ->where('is_active', true)
                            ->latest()
@@ -259,6 +260,20 @@ class MarketplaceController extends Controller
                 'url'        => $img->url,
                 'is_primary' => $img->is_primary,
             ]);
+        }
+
+        // Surface a compact vendor payload so the frontend can show the store
+        // without leaking sensitive Authenticatable columns.
+        if ($product->relationLoaded('vendor') && $product->vendor) {
+            $vendor = $product->vendor;
+            $data['vendor'] = [
+                'id'                => $vendor->id,
+                'name'              => $vendor->name,
+                'store_name'        => $vendor->store_name,
+                'store_slug'        => $vendor->store_slug,
+                'store_logo'        => $vendor->store_logo,
+                'is_verified'       => (bool) $vendor->is_verified,
+            ];
         }
 
         return $data;
