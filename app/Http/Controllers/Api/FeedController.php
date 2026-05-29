@@ -8,6 +8,21 @@ use Illuminate\Http\Request;
 
 class FeedController extends Controller
 {
+    /**
+     * Attach media_url (first) and media_urls (all) to a catch model.
+     */
+    private function attachMediaUrls($catch)
+    {
+        $urls = $catch->getMedia('catch_media')
+                      ->map(fn ($m) => $m->getUrl())
+                      ->values();
+
+        $catch->media_urls = $urls;
+        $catch->media_url  = $urls->first();
+
+        return $catch;
+    }
+
     // GLOBAL FEED — all catches, newest first
     public function global(Request $request)
     {
@@ -23,11 +38,7 @@ class FeedController extends Controller
                             ->latest()
                             ->paginate(15);
 
-        // Add media URL to each catch
-        $catches->getCollection()->transform(function ($catch) {
-            $catch->media_url = $catch->getFirstMediaUrl('catch_media');
-            return $catch;
-        });
+        $catches->getCollection()->transform(fn ($c) => $this->attachMediaUrls($c));
 
         return response()->json($catches);
     }
@@ -59,11 +70,7 @@ class FeedController extends Controller
                             ->latest()
                             ->paginate(15);
 
-        // Add media URL to each catch
-        $catches->getCollection()->transform(function ($catch) {
-            $catch->media_url = $catch->getFirstMediaUrl('catch_media');
-            return $catch;
-        });
+        $catches->getCollection()->transform(fn ($c) => $this->attachMediaUrls($c));
 
         return response()->json($catches);
     }
@@ -100,9 +107,12 @@ class FeedController extends Controller
                                ->exists();
         }
 
+        $this->attachMediaUrls($catch);
+
         return response()->json([
             'catch'       => $catch,
-            'media_url'   => $catch->getFirstMediaUrl('catch_media'),
+            'media_url'   => $catch->media_url,
+            'media_urls'  => $catch->media_urls,
             'liked_by_me' => $likedByMe,
         ]);
     }
@@ -130,11 +140,7 @@ class FeedController extends Controller
                             ->latest()
                             ->paginate(15);
 
-        // Add media URL to each catch
-        $catches->getCollection()->transform(function ($catch) {
-            $catch->media_url = $catch->getFirstMediaUrl('catch_media');
-            return $catch;
-        });
+        $catches->getCollection()->transform(fn ($c) => $this->attachMediaUrls($c));
 
         return response()->json($catches);
     }

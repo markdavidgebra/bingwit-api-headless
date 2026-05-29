@@ -23,7 +23,11 @@ class CatchController extends Controller
             'location'       => 'nullable|string|max:255',
             'latitude'       => 'nullable|numeric',
             'longitude'      => 'nullable|numeric',
+            // Single legacy field (kept for backward compatibility)
             'media'          => 'nullable|file|mimes:jpg,jpeg,png,mp4|max:51200',
+            // New: up to 10 photos
+            'media_files'    => 'nullable|array|max:10',
+            'media_files.*'  => 'file|mimes:jpg,jpeg,png|max:51200',
             'media_type'     => 'nullable|in:photo,video',
         ]);
 
@@ -41,15 +45,28 @@ class CatchController extends Controller
             'media_type'     => $request->media_type ?? 'photo',
         ]);
 
-        // Upload media using Spatie Media Library
-        if ($request->hasFile('media')) {
+        // Multi-photo upload (preferred)
+        if ($request->hasFile('media_files')) {
+            foreach ($request->file('media_files') as $file) {
+                $catch->addMedia($file)
+                      ->toMediaCollection('catch_media');
+            }
+        }
+        // Single legacy upload
+        elseif ($request->hasFile('media')) {
             $catch->addMediaFromRequest('media')
                   ->toMediaCollection('catch_media');
         }
 
+        $catch->load('user');
+        $catch->media_urls = $catch->getMedia('catch_media')
+                                   ->map(fn ($m) => $m->getUrl())
+                                   ->values();
+        $catch->media_url = $catch->media_urls->first();
+
         return response()->json([
             'message' => 'Catch posted successfully!',
-            'catch'   => $catch->load('user'),
+            'catch'   => $catch,
         ], 201);
     }
 
@@ -60,12 +77,17 @@ class CatchController extends Controller
                           ->withCount(['likes', 'comments'])
                           ->findOrFail($id);
 
-        // Get media URL from Spatie
-        $mediaUrl = $catch->getFirstMediaUrl('catch_media');
+        $mediaUrls = $catch->getMedia('catch_media')
+                           ->map(fn ($m) => $m->getUrl())
+                           ->values();
+
+        $catch->media_urls = $mediaUrls;
+        $catch->media_url  = $mediaUrls->first();
 
         return response()->json([
-            'catch'     => $catch,
-            'media_url' => $mediaUrl,
+            'catch'      => $catch,
+            'media_url'  => $catch->media_url,
+            'media_urls' => $mediaUrls,
         ]);
     }
 
@@ -78,7 +100,11 @@ class CatchController extends Controller
                             ->latest()
                             ->get()
                             ->map(function ($catch) {
-                                $catch->media_url = $catch->getFirstMediaUrl('catch_media');
+                                $urls = $catch->getMedia('catch_media')
+                                              ->map(fn ($m) => $m->getUrl())
+                                              ->values();
+                                $catch->media_urls = $urls;
+                                $catch->media_url  = $urls->first();
                                 return $catch;
                             });
 

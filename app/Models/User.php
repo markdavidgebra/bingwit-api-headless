@@ -64,4 +64,21 @@ class User extends Authenticatable implements HasMedia
         $this->addMediaCollection('profile_picture')
              ->singleFile();
     }
+
+    /**
+     * If the user uploaded a photo via Spatie Media Library
+     * (POST /profile/photo) but the `profile_picture` column is empty,
+     * surface the media URL so the frontend can render it without
+     * a separate request.
+     */
+    public function getProfilePictureAttribute($value)
+    {
+        if (! empty($value)) {
+            return $value;
+        }
+
+        $mediaUrl = $this->getFirstMediaUrl('profile_picture');
+
+        return $mediaUrl !== '' ? $mediaUrl : null;
+    }
 }
