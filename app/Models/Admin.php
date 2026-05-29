@@ -30,4 +30,21 @@ class Admin extends Authenticatable
             'password'          => 'hashed',
         ];
     }
+
+    // Always include the public URL when this model is serialized.
+    protected $appends = ['profile_picture_url'];
+
+    public function getProfilePictureUrlAttribute(): ?string
+    {
+        if (! $this->profile_picture) {
+            return null;
+        }
+
+        // If somehow a full URL is already stored, return it as-is.
+        if (preg_match('#^https?://#i', $this->profile_picture)) {
+            return $this->profile_picture;
+        }
+
+        return asset('storage/' . $this->profile_picture);
+    }
 }

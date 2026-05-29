@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\ReviewController;
 use App\Http\Controllers\Api\Admin\ProductAdminController;
 use App\Http\Controllers\Api\Vendor\VendorController;
 use App\Http\Controllers\Api\Admin\VendorAdminController;
+use App\Http\Controllers\Api\Admin\AdminProfileController;
 // ─── Public Routes ────────────────────────────────────────
 
 // ─── Marketplace (Public) ─────────────────────────────────
@@ -80,6 +81,11 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // ─── Admin-Only Routes ────────────────────────────────────
     Route::prefix('admin')->middleware('admin')->group(function () {
+        // Admin's own profile
+        Route::get('/me', [AdminProfileController::class, 'me']);
+        Route::put('/profile', [AdminProfileController::class, 'update']);
+        Route::post('/profile/photo', [AdminProfileController::class, 'uploadPhoto']);
+
         // Vendor management
         Route::get('/vendors', [VendorAdminController::class, 'index']);
         Route::post('/vendors', [VendorAdminController::class, 'storeVendor']);
