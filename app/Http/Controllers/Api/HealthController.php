@@ -15,7 +15,8 @@ class HealthController extends Controller
      * Public, read-only diagnostic. Tells you whether the live server is
      * actually capable of accepting photo uploads:
      *  - PHP file_uploads + size limits
-     *  - whether public/storage symlink exists
+     *  - whether public/storage symlink exists and is reachable
+     *  - whether the public disk is actually writable + URL-resolvable
      *  - default filesystem disk
      *  - APP_URL
      *  - count of catches that ended up with zero media attached
@@ -24,10 +25,16 @@ class HealthController extends Controller
      */
     public function uploads(Request $request)
     {
-        $publicStorage = public_path('storage');
+        $publicStoragePath = public_path('storage');
 
         $totalCatches = FishCatch::count();
         $catchesWithoutMedia = FishCatch::doesntHave('media')->count();
+
+        // Active write probe: write a tiny file via the public disk, build a
+        // URL for it, hit that URL with a HEAD request, and confirm the round
+        // trip works. This is the most reliable signal that uploads will
+        // actually surface to clients.
+        $writeProbe = $this->probePublicDiskWrite();
 
         return response()->json([
             'php' => [
@@ -48,18 +55,67 @@ class HealthController extends Controller
                 'public_disk_url' => config('filesystems.disks.public.url'),
             ],
             'storage_symlink' => [
-                'public_storage_path' => $publicStorage,
-                'exists'              => file_exists($publicStorage),
-                'is_link'             => is_link($publicStorage),
-                'readlink'            => is_link($publicStorage) ? readlink($publicStorage) : null,
-                'public_disk_writable'=> Storage::disk('public')->getDriver() !== null
-                                          && is_writable(storage_path('app/public')),
+                'public_storage_path' => $publicStoragePath,
+                'exists'              => file_exists($publicStoragePath),
+                'is_link'             => is_link($publicStoragePath),
+                'readlink'            => is_link($publicStoragePath) ? @readlink($publicStoragePath) : null,
+                'public_app_dir'      => storage_path('app/public'),
+                'public_dir_writable' => is_writable(storage_path('app/public')),
             ],
+            'write_probe' => $writeProbe,
             'catches' => [
                 'total'         => $totalCatches,
                 'without_media' => $catchesWithoutMedia,
                 'with_media'    => $totalCatches - $catchesWithoutMedia,
             ],
         ]);
+    }
+
+    /**
+     * Try to actually write a tiny file to the public disk and confirm it's
+     * publicly fetchable via the URL Spatie would construct.
+     */
+    private function probePublicDiskWrite(): array
+    {
+        $relativePath = '_health/probe-' . uniqid() . '.txt';
+        $body = 'bingwit-upload-probe ' . now()->toDateTimeString();
+
+        $result = [
+            'wrote'        => false,
+            'url'          => null,
+            'fetchable'    => null,
+            'fetch_status' => null,
+            'error'        => null,
+        ];
+
+        try {
+            Storage::disk('public')->put($relativePath, $body);
+            $result['wrote'] = true;
+            $result['url']   = Storage::disk('public')->url($relativePath);
+
+            // Round-trip: fetch the URL we just minted. If symlink + APP_URL
+            // are correct, this returns 200. If 404 -> storage:link missing
+            // or APP_URL wrong. If 403 -> directory permissions wrong.
+            $ctx = stream_context_create([
+                'http' => ['method' => 'HEAD', 'timeout' => 4, 'ignore_errors' => true],
+            ]);
+            $headers = @get_headers($result['url'], 0, $ctx);
+            if (is_array($headers) && isset($headers[0])) {
+                $result['fetch_status'] = $headers[0];
+                $result['fetchable']    = (bool) preg_match('/\b200\b/', $headers[0]);
+            }
+        } catch (\Throwable $e) {
+            $result['error'] = $e->getMessage();
+        } finally {
+            try {
+                if (Storage::disk('public')->exists($relativePath)) {
+                    Storage::disk('public')->delete($relativePath);
+                }
+            } catch (\Throwable $e) {
+                // best-effort cleanup
+            }
+        }
+
+        return $result;
     }
 }

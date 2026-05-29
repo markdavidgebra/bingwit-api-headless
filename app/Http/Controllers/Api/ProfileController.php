@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\Follow;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class ProfileController extends Controller
 {
@@ -61,19 +62,55 @@ class ProfileController extends Controller
     // UPLOAD PROFILE PICTURE
     public function uploadPhoto(Request $request)
     {
+        // If PHP/server discarded the upload (post_max_size, upload_max_filesize,
+        // file_uploads=Off), $request->file('photo') will be null and Laravel's
+        // 'required' rule reports a misleading message. Detect that explicitly
+        // so the client can show a useful error.
+        $contentLength = (int) $request->server('CONTENT_LENGTH', 0);
+        if (! $request->hasFile('photo') && $contentLength > 1024) {
+            $debug = [
+                'content_length'      => $contentLength,
+                'php_files_keys'      => array_keys($request->allFiles()),
+                'post_max_size'       => ini_get('post_max_size'),
+                'upload_max_filesize' => ini_get('upload_max_filesize'),
+                'file_uploads'        => (bool) ini_get('file_uploads'),
+            ];
+            Log::warning('Profile photo upload — request reached PHP without files', $debug);
+
+            return response()->json([
+                'message'      => 'The server rejected the upload before it reached the app. '
+                                . 'Most likely the host\'s PHP upload limits are too low. '
+                                . 'See `upload_debug` for the effective limits.',
+                'upload_debug' => $debug,
+            ], 413);
+        }
+
         $request->validate([
-            'photo' => 'required|image|mimes:jpg,jpeg,png|max:2048',
+            // Generous: client-side compression keeps real uploads <500 KB,
+            // but allow up to 8 MB so a slightly larger file still works.
+            'photo' => 'required|image|mimes:jpg,jpeg,png,webp|max:8192',
         ]);
 
         $user = $request->user();
 
-        // Store photo using Spatie Media Library
-        $user->clearMediaCollection('profile_picture');
-        $media = $user->addMediaFromRequest('photo')
-            ->toMediaCollection('profile_picture');
+        try {
+            $user->clearMediaCollection('profile_picture');
+            $media = $user->addMediaFromRequest('photo')
+                ->toMediaCollection('profile_picture');
+        } catch (\Throwable $e) {
+            Log::error('Profile photo Spatie write failed', [
+                'user_id' => $user->id,
+                'message' => $e->getMessage(),
+            ]);
+            return response()->json([
+                'message'      => 'Could not save the photo on the server. '
+                                . 'Most likely a permissions issue on storage/app/public/.',
+                'upload_debug' => ['error' => $e->getMessage()],
+            ], 500);
+        }
 
         return response()->json([
-            'message' => 'Profile picture updated!',
+            'message'   => 'Profile picture updated!',
             'photo_url' => $media->getUrl(),
         ]);
     }
