@@ -15,7 +15,7 @@ class CategoryFactory extends Factory
 
     public function definition(): array
     {
-        $name = fake()->unique()->randomElement([
+        $name = $this->faker->unique()->randomElement([
             'Rods', 'Reels', 'Bait', 'Lures', 'Hooks',
             'Fishing Lines', 'Accessories', 'Apparel', 'Boats',
             'Tackle Boxes', 'Nets', 'Coolers', 'Waders', 'Sunglasses',
@@ -26,9 +26,9 @@ class CategoryFactory extends Factory
         return [
             'name'        => $name,
             'slug'        => Str::slug($name) . '-' . Str::random(5),
-            'icon'        => fake()->randomElement($icons),
+            'icon'        => $this->faker->randomElement($icons),
             'image'       => null,
-            'description' => fake()->sentence(8),
+            'description' => $this->faker->sentence(8),
             'is_active'   => true,
         ];
     }
