@@ -7,6 +7,7 @@ use App\Models\FishCatch;
 use App\Models\Like;
 use App\Models\Comment;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class CatchController extends Controller
 {
@@ -45,17 +46,50 @@ class CatchController extends Controller
             'media_type'     => $request->media_type ?? 'photo',
         ]);
 
-        // Multi-photo upload (preferred)
-        if ($request->hasFile('media_files')) {
-            foreach ($request->file('media_files') as $file) {
-                $catch->addMedia($file)
-                      ->toMediaCollection('catch_media');
+        $uploadDebug = [
+            'has_media_files' => $request->hasFile('media_files'),
+            'has_media'       => $request->hasFile('media'),
+            'files_received'  => 0,
+            'php_files_keys'  => array_keys($request->allFiles()),
+            'content_length'  => (int) $request->server('CONTENT_LENGTH', 0),
+            'post_max_size'   => ini_get('post_max_size'),
+            'upload_max_size' => ini_get('upload_max_filesize'),
+        ];
+
+        try {
+            // Multi-photo upload (preferred)
+            if ($request->hasFile('media_files')) {
+                foreach ($request->file('media_files') as $file) {
+                    $catch->addMedia($file)
+                          ->toMediaCollection('catch_media');
+                    $uploadDebug['files_received']++;
+                }
             }
+            // Single legacy upload
+            elseif ($request->hasFile('media')) {
+                $catch->addMediaFromRequest('media')
+                      ->toMediaCollection('catch_media');
+                $uploadDebug['files_received'] = 1;
+            }
+        } catch (\Throwable $e) {
+            $uploadDebug['error'] = $e->getMessage();
+            Log::error('Catch media upload failed', [
+                'catch_id' => $catch->id,
+                'message'  => $e->getMessage(),
+                'trace'    => $e->getTraceAsString(),
+            ]);
         }
-        // Single legacy upload
-        elseif ($request->hasFile('media')) {
-            $catch->addMediaFromRequest('media')
-                  ->toMediaCollection('catch_media');
+
+        // If the client expected to upload photos but PHP/server discarded
+        // them (post_max_size / upload_max_filesize / file_uploads), the
+        // catch row would otherwise be created silently with no images.
+        // Surface that explicitly so the frontend can react and so it shows
+        // up in logs.
+        if ($uploadDebug['files_received'] === 0
+            && (int) $request->server('CONTENT_LENGTH', 0) > 1024 * 1024
+            && empty($uploadDebug['php_files_keys'])
+        ) {
+            Log::warning('Catch posted but no files reached PHP — likely upload limit', $uploadDebug);
         }
 
         // Reload with relations the frontend needs; media_url/media_urls
@@ -63,8 +97,9 @@ class CatchController extends Controller
         $catch->load(['user', 'media']);
 
         return response()->json([
-            'message' => 'Catch posted successfully!',
-            'catch'   => $catch,
+            'message'       => 'Catch posted successfully!',
+            'catch'         => $catch,
+            'upload_debug'  => $uploadDebug,
         ], 201);
     }
 

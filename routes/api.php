@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\CatchController;
 use App\Http\Controllers\Api\FeedController;
+use App\Http\Controllers\Api\HealthController;
 use App\Http\Controllers\Api\ForecastController;
 use App\Http\Controllers\Api\MapController;
 use App\Http\Controllers\Api\LeaderboardController;
@@ -18,6 +19,9 @@ use App\Http\Controllers\Api\Vendor\VendorController;
 use App\Http\Controllers\Api\Admin\VendorAdminController;
 use App\Http\Controllers\Api\Admin\AdminProfileController;
 // ─── Public Routes ────────────────────────────────────────
+
+// ─── Diagnostics (Public, read-only) ──────────────────────
+Route::get('/_health/uploads', [HealthController::class, 'uploads']);
 
 // ─── Marketplace (Public) ─────────────────────────────────
 Route::get('/marketplace', [MarketplaceController::class, 'home']);
