@@ -109,9 +109,16 @@ class ProfileController extends Controller
             ], 500);
         }
 
+        $photoUrl = $media->getUrl();
+
+        // Persist URL on the user row so profile works even if the
+        // getProfilePictureAttribute accessor is not deployed yet.
+        $user->update(['profile_picture' => $photoUrl]);
+
         return response()->json([
             'message'   => 'Profile picture updated!',
-            'photo_url' => $media->getUrl(),
+            'photo_url' => $photoUrl,
+            'user'      => $user->fresh(),
         ]);
     }
 

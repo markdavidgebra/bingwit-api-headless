@@ -11,6 +11,40 @@ use Illuminate\Support\Facades\Log;
 
 class CatchController extends Controller
 {
+    /**
+     * Collect uploaded catch photos from every field name PHP might use.
+     * CloudPanel / nginx sometimes expose `media_files[]` under a different key.
+     */
+    private function collectCatchUploadFiles(Request $request): array
+    {
+        $files = [];
+
+        if ($request->hasFile('media_files')) {
+            $incoming = $request->file('media_files');
+            $files = array_merge($files, is_array($incoming) ? $incoming : [$incoming]);
+        }
+
+        if ($request->hasFile('media')) {
+            $files[] = $request->file('media');
+        }
+
+        foreach ($request->allFiles() as $key => $value) {
+            if ($key === 'media_files' || $key === 'media') {
+                continue;
+            }
+            if (! str_starts_with((string) $key, 'media_files')) {
+                continue;
+            }
+            if (is_array($value)) {
+                $files = array_merge($files, $value);
+            } elseif ($value) {
+                $files[] = $value;
+            }
+        }
+
+        return array_values(array_filter($files));
+    }
+
     // POST A NEW CATCH
     public function store(Request $request)
     {
@@ -56,20 +90,15 @@ class CatchController extends Controller
             'upload_max_size' => ini_get('upload_max_filesize'),
         ];
 
+        $uploadFiles = $this->collectCatchUploadFiles($request);
+        $uploadDebug['upload_file_keys'] = array_keys($request->allFiles());
+        $uploadDebug['resolved_file_count'] = count($uploadFiles);
+
         try {
-            // Multi-photo upload (preferred)
-            if ($request->hasFile('media_files')) {
-                foreach ($request->file('media_files') as $file) {
-                    $catch->addMedia($file)
-                          ->toMediaCollection('catch_media');
-                    $uploadDebug['files_received']++;
-                }
-            }
-            // Single legacy upload
-            elseif ($request->hasFile('media')) {
-                $catch->addMediaFromRequest('media')
+            foreach ($uploadFiles as $file) {
+                $catch->addMedia($file)
                       ->toMediaCollection('catch_media');
-                $uploadDebug['files_received'] = 1;
+                $uploadDebug['files_received']++;
             }
         } catch (\Throwable $e) {
             $uploadDebug['error'] = $e->getMessage();

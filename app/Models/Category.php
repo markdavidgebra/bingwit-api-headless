@@ -2,10 +2,13 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class Category extends Model
 {
+    use HasFactory;
+
     protected $fillable = [
         'name',
         'slug',
@@ -15,7 +18,6 @@ class Category extends Model
         'is_active',
     ];
 
-    // All products in this category
     public function products()
     {
         return $this->hasMany(Product::class);
