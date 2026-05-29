@@ -58,11 +58,9 @@ class CatchController extends Controller
                   ->toMediaCollection('catch_media');
         }
 
-        $catch->load('user');
-        $catch->media_urls = $catch->getMedia('catch_media')
-                                   ->map(fn ($m) => $m->getUrl())
-                                   ->values();
-        $catch->media_url = $catch->media_urls->first();
+        // Reload with relations the frontend needs; media_url/media_urls
+        // are auto-appended via FishCatch model accessors.
+        $catch->load(['user', 'media']);
 
         return response()->json([
             'message' => 'Catch posted successfully!',
@@ -73,40 +71,25 @@ class CatchController extends Controller
     // VIEW A SINGLE CATCH
     public function show($id)
     {
-        $catch = FishCatch::with(['user', 'comments.user'])
+        $catch = FishCatch::with(['user', 'comments.user', 'media'])
                           ->withCount(['likes', 'comments'])
                           ->findOrFail($id);
-
-        $mediaUrls = $catch->getMedia('catch_media')
-                           ->map(fn ($m) => $m->getUrl())
-                           ->values();
-
-        $catch->media_urls = $mediaUrls;
-        $catch->media_url  = $mediaUrls->first();
 
         return response()->json([
             'catch'      => $catch,
             'media_url'  => $catch->media_url,
-            'media_urls' => $mediaUrls,
+            'media_urls' => $catch->media_urls,
         ]);
     }
 
     // VIEW ALL CATCHES BY A SPECIFIC USER
     public function userCatches($userId)
     {
-        $catches = FishCatch::with('user')
+        $catches = FishCatch::with(['user', 'media'])
                             ->withCount(['likes', 'comments'])
                             ->where('user_id', $userId)
                             ->latest()
-                            ->get()
-                            ->map(function ($catch) {
-                                $urls = $catch->getMedia('catch_media')
-                                              ->map(fn ($m) => $m->getUrl())
-                                              ->values();
-                                $catch->media_urls = $urls;
-                                $catch->media_url  = $urls->first();
-                                return $catch;
-                            });
+                            ->get();
 
         return response()->json($catches);
     }

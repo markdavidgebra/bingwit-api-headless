@@ -8,37 +8,23 @@ use Illuminate\Http\Request;
 
 class FeedController extends Controller
 {
-    /**
-     * Attach media_url (first) and media_urls (all) to a catch model.
-     */
-    private function attachMediaUrls($catch)
-    {
-        $urls = $catch->getMedia('catch_media')
-                      ->map(fn ($m) => $m->getUrl())
-                      ->values();
-
-        $catch->media_urls = $urls;
-        $catch->media_url  = $urls->first();
-
-        return $catch;
-    }
-
     // GLOBAL FEED — all catches, newest first
     public function global(Request $request)
     {
-        $catches = FishCatch::with(['user' => function ($q) {
-                                $q->select(
-                                    'id',
-                                    'name',
-                                    'profile_picture',
-                                    'fishing_style'
-                                );
-                            }])
+        $catches = FishCatch::with([
+                                'user' => function ($q) {
+                                    $q->select(
+                                        'id',
+                                        'name',
+                                        'profile_picture',
+                                        'fishing_style'
+                                    );
+                                },
+                                'media',
+                            ])
                             ->withCount(['likes', 'comments'])
                             ->latest()
                             ->paginate(15);
-
-        $catches->getCollection()->transform(fn ($c) => $this->attachMediaUrls($c));
 
         return response()->json($catches);
     }
@@ -57,20 +43,21 @@ class FeedController extends Controller
             ]);
         }
 
-        $catches = FishCatch::with(['user' => function ($q) {
-                                $q->select(
-                                    'id',
-                                    'name',
-                                    'profile_picture',
-                                    'fishing_style'
-                                );
-                            }])
+        $catches = FishCatch::with([
+                                'user' => function ($q) {
+                                    $q->select(
+                                        'id',
+                                        'name',
+                                        'profile_picture',
+                                        'fishing_style'
+                                    );
+                                },
+                                'media',
+                            ])
                             ->withCount(['likes', 'comments'])
                             ->whereIn('user_id', $followingIds)
                             ->latest()
                             ->paginate(15);
-
-        $catches->getCollection()->transform(fn ($c) => $this->attachMediaUrls($c));
 
         return response()->json($catches);
     }
@@ -94,20 +81,18 @@ class FeedController extends Controller
                                 'name',
                                 'profile_picture'
                             );
-                        }
+                        },
+                        'media',
                     ])
                     ->withCount(['likes', 'comments'])
                     ->findOrFail($id);
 
-        // Check if current user liked this catch
         $likedByMe = false;
         if ($request->user()) {
             $likedByMe = $catch->likes()
                                ->where('user_id', $request->user()->id)
                                ->exists();
         }
-
-        $this->attachMediaUrls($catch);
 
         return response()->json([
             'catch'       => $catch,
@@ -126,21 +111,22 @@ class FeedController extends Controller
 
         $keyword = $request->query('query');
 
-        $catches = FishCatch::with(['user' => function ($q) {
-                                $q->select(
-                                    'id',
-                                    'name',
-                                    'profile_picture'
-                                );
-                            }])
+        $catches = FishCatch::with([
+                                'user' => function ($q) {
+                                    $q->select(
+                                        'id',
+                                        'name',
+                                        'profile_picture'
+                                    );
+                                },
+                                'media',
+                            ])
                             ->withCount(['likes', 'comments'])
                             ->where('fish_species', 'like', "%{$keyword}%")
                             ->orWhere('location',    'like', "%{$keyword}%")
                             ->orWhere('caption',     'like', "%{$keyword}%")
                             ->latest()
                             ->paginate(15);
-
-        $catches->getCollection()->transform(fn ($c) => $this->attachMediaUrls($c));
 
         return response()->json($catches);
     }
