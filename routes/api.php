@@ -18,6 +18,9 @@ use App\Http\Controllers\Api\Admin\ProductAdminController;
 use App\Http\Controllers\Api\Vendor\VendorController;
 use App\Http\Controllers\Api\Admin\VendorAdminController;
 use App\Http\Controllers\Api\Admin\AdminProfileController;
+use App\Http\Controllers\Api\TournamentController;
+use App\Http\Controllers\Api\Admin\TournamentAdminController;
+use App\Http\Controllers\Api\Admin\CatchAdminController;
 // ─── Public Routes ────────────────────────────────────────
 
 // ─── Diagnostics (Public, read-only) ──────────────────────
@@ -43,6 +46,13 @@ Route::get('/forecast', [ForecastController::class, 'getForecast']);
 // Feed
 Route::get('/feed', [FeedController::class, 'global']);
 Route::get('/feed/search', [FeedController::class, 'search']);
+// Cross-posted tournament announcements that should appear above the feed.
+Route::get('/feed/announcements', [TournamentController::class, 'announcements']);
+
+// ─── Tournaments (Public) ─────────────────────────────────
+Route::get('/tournaments', [TournamentController::class, 'index']);
+Route::get('/tournaments/{id}', [TournamentController::class, 'show']);
+Route::get('/tournaments/{id}/posts', [TournamentController::class, 'posts']);
 
 // Map
 Route::get('/map/spots', [MapController::class, 'spots']);
@@ -113,6 +123,21 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/categories', [ProductAdminController::class, 'createCategory']);
         Route::get('/brands', [ProductAdminController::class, 'brands']);
         Route::post('/brands', [ProductAdminController::class, 'createBrand']);
+
+        // Catch moderation
+        Route::delete('/catches/{id}', [CatchAdminController::class, 'destroy']);
+
+        // ─── Tournament management ────────────────────────────
+        Route::get('/tournaments', [TournamentAdminController::class, 'index']);
+        Route::post('/tournaments', [TournamentAdminController::class, 'store']);
+        Route::get('/tournaments/{id}', [TournamentAdminController::class, 'show']);
+        Route::put('/tournaments/{id}', [TournamentAdminController::class, 'update']);
+        Route::delete('/tournaments/{id}', [TournamentAdminController::class, 'destroy']);
+        Route::get('/tournaments/{id}/posts', [TournamentAdminController::class, 'posts']);
+        Route::post('/tournaments/{id}/posts', [TournamentAdminController::class, 'createPost']);
+        Route::get('/tournaments/{id}/participants', [TournamentAdminController::class, 'participants']);
+        Route::put('/tournament-posts/{postId}', [TournamentAdminController::class, 'updatePost']);
+        Route::delete('/tournament-posts/{postId}', [TournamentAdminController::class, 'destroyPost']);
     });
 
     // Marketplace (Protected)
@@ -141,6 +166,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/users/{id}/unfollow', [ProfileController::class, 'unfollow']);
     Route::get('/my-following', [ProfileController::class, 'myFollowing']);
 
+
+    // Tournaments (auth users register/withdraw)
+    Route::post('/tournaments/{id}/register', [TournamentController::class, 'register']);
+    Route::delete('/tournaments/{id}/register', [TournamentController::class, 'unregister']);
 
     // Catches
     Route::post('/catches', [CatchController::class, 'store']);
