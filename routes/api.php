@@ -132,6 +132,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/tournaments', [TournamentAdminController::class, 'store']);
         Route::get('/tournaments/{id}', [TournamentAdminController::class, 'show']);
         Route::put('/tournaments/{id}', [TournamentAdminController::class, 'update']);
+        Route::post('/tournaments/{id}/cover', [TournamentAdminController::class, 'uploadCover']);
         Route::delete('/tournaments/{id}', [TournamentAdminController::class, 'destroy']);
         Route::get('/tournaments/{id}/posts', [TournamentAdminController::class, 'posts']);
         Route::post('/tournaments/{id}/posts', [TournamentAdminController::class, 'createPost']);

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Tournament;
 use App\Models\TournamentPost;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 class TournamentAdminController extends Controller
@@ -98,6 +99,54 @@ class TournamentAdminController extends Controller
         $tournament->delete();
 
         return response()->json(['message' => 'Tournament deleted.']);
+    }
+
+    // POST /api/admin/tournaments/{id}/cover
+    public function uploadCover(Request $request, $id)
+    {
+        $tournament = Tournament::findOrFail($id);
+
+        $contentLength = (int) $request->server('CONTENT_LENGTH', 0);
+        if (! $request->hasFile('cover') && $contentLength > 1024) {
+            Log::warning('Tournament cover upload — request reached PHP without files', [
+                'tournament_id' => $tournament->id,
+                'content_length' => $contentLength,
+                'php_files_keys' => array_keys($request->allFiles()),
+            ]);
+
+            return response()->json([
+                'message' => 'The server rejected the upload before it reached the app. '
+                            . 'Check PHP upload limits (post_max_size, upload_max_filesize).',
+            ], 413);
+        }
+
+        $request->validate([
+            'cover' => 'required|image|mimes:jpg,jpeg,png,webp|max:8192',
+        ]);
+
+        try {
+            $tournament->clearMediaCollection('cover');
+            $media = $tournament->addMediaFromRequest('cover')
+                ->toMediaCollection('cover');
+        } catch (\Throwable $e) {
+            Log::error('Tournament cover Spatie write failed', [
+                'tournament_id' => $tournament->id,
+                'message' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'message' => 'Could not save the cover image on the server. '
+                            . 'Check storage/app/public permissions and the storage symlink.',
+            ], 500);
+        }
+
+        $coverUrl = $media->getUrl();
+        $tournament->update(['cover_image' => $coverUrl]);
+
+        return response()->json([
+            'message'    => 'Cover image updated!',
+            'tournament' => $tournament->fresh()->load('media'),
+        ]);
     }
 
     // GET /api/admin/tournaments/{id}/posts
