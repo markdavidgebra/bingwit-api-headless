@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Spatie\MediaLibrary\HasMedia;
 use Spatie\MediaLibrary\InteractsWithMedia;
 
-class Tournament extends Model implements HasMedia
+class FishingBoat extends Model implements HasMedia
 {
     use InteractsWithMedia;
 
@@ -17,28 +17,24 @@ class Tournament extends Model implements HasMedia
         'slug',
         'description',
         'location',
-        'prize_pool',
-        'entry_fee',
-        'max_participants',
-        'starts_at',
-        'ends_at',
-        'registration_deadline',
+        'departure_point',
+        'capacity',
+        'trip_price',
+        'duration_hours',
+        'captain_name',
+        'contact_phone',
         'status',
         'cover_image',
+        'cover_focus_x',
+        'cover_focus_y',
     ];
 
     protected $casts = [
-        'starts_at'             => 'datetime',
-        'ends_at'               => 'datetime',
-        'registration_deadline' => 'datetime',
-        'prize_pool'            => 'decimal:2',
-        'entry_fee'             => 'decimal:2',
+        'trip_price'     => 'decimal:2',
+        'cover_focus_x'  => 'integer',
+        'cover_focus_y'  => 'integer',
     ];
 
-    /**
-     * Computed cover URL — prefer Spatie media, fall back to the
-     * `cover_image` column (so admins can paste a URL too).
-     */
     protected $appends = ['cover_url'];
 
     public function admin()
@@ -46,25 +42,23 @@ class Tournament extends Model implements HasMedia
         return $this->belongsTo(Admin::class, 'admin_id');
     }
 
-    public function participants()
+    public function bookings()
     {
-        return $this->hasMany(TournamentParticipant::class);
+        return $this->hasMany(BoatBooking::class);
     }
 
-    public function posts()
+    public function activeBookings()
     {
-        return $this->hasMany(TournamentPost::class)->latest();
+        return $this->bookings()->whereIn('status', ['pending', 'confirmed']);
     }
 
-    public function isParticipant($userId): bool
+    public function hasActiveBookingForUser(?int $userId): bool
     {
         if (! $userId) {
             return false;
         }
-        return $this->participants()
-                    ->where('user_id', $userId)
-                    ->whereIn('status', ['registered', 'confirmed'])
-                    ->exists();
+
+        return $this->activeBookings()->where('user_id', $userId)->exists();
     }
 
     public function getCoverUrlAttribute(): ?string

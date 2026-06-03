@@ -140,8 +140,7 @@ class TournamentAdminController extends Controller
             ], 500);
         }
 
-        $coverUrl = $media->getUrl();
-        $tournament->update(['cover_image' => $coverUrl]);
+        $tournament->update(['cover_image' => $media->getPathRelativeToRoot()]);
 
         return response()->json([
             'message'    => 'Cover image updated!',

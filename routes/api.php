@@ -19,7 +19,9 @@ use App\Http\Controllers\Api\Vendor\VendorController;
 use App\Http\Controllers\Api\Admin\VendorAdminController;
 use App\Http\Controllers\Api\Admin\AdminProfileController;
 use App\Http\Controllers\Api\TournamentController;
+use App\Http\Controllers\Api\FishingBoatController;
 use App\Http\Controllers\Api\Admin\TournamentAdminController;
+use App\Http\Controllers\Api\Admin\FishingBoatAdminController;
 use App\Http\Controllers\Api\Admin\CatchAdminController;
 // ─── Public Routes ────────────────────────────────────────
 
@@ -53,6 +55,10 @@ Route::get('/feed/announcements', [TournamentController::class, 'announcements']
 Route::get('/tournaments', [TournamentController::class, 'index']);
 Route::get('/tournaments/{id}', [TournamentController::class, 'show']);
 Route::get('/tournaments/{id}/posts', [TournamentController::class, 'posts']);
+
+// ─── Fishing Boats (Public) ───────────────────────────────
+Route::get('/fishing-boats', [FishingBoatController::class, 'index']);
+Route::get('/fishing-boats/{id}', [FishingBoatController::class, 'show']);
 
 // Map
 Route::get('/map/spots', [MapController::class, 'spots']);
@@ -139,6 +145,16 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/tournaments/{id}/participants', [TournamentAdminController::class, 'participants']);
         Route::put('/tournament-posts/{postId}', [TournamentAdminController::class, 'updatePost']);
         Route::delete('/tournament-posts/{postId}', [TournamentAdminController::class, 'destroyPost']);
+
+        // ─── Fishing boat management ──────────────────────────
+        Route::get('/fishing-boats', [FishingBoatAdminController::class, 'index']);
+        Route::post('/fishing-boats', [FishingBoatAdminController::class, 'store']);
+        Route::get('/fishing-boats/{id}', [FishingBoatAdminController::class, 'show']);
+        Route::put('/fishing-boats/{id}', [FishingBoatAdminController::class, 'update']);
+        Route::post('/fishing-boats/{id}/cover', [FishingBoatAdminController::class, 'uploadCover']);
+        Route::delete('/fishing-boats/{id}', [FishingBoatAdminController::class, 'destroy']);
+        Route::get('/fishing-boats/{id}/bookings', [FishingBoatAdminController::class, 'bookings']);
+        Route::put('/boat-bookings/{bookingId}/status', [FishingBoatAdminController::class, 'updateBookingStatus']);
     });
 
     // Marketplace (Protected)
@@ -171,6 +187,11 @@ Route::middleware('auth:sanctum')->group(function () {
     // Tournaments (auth users register/withdraw)
     Route::post('/tournaments/{id}/register', [TournamentController::class, 'register']);
     Route::delete('/tournaments/{id}/register', [TournamentController::class, 'unregister']);
+
+    // Fishing boat bookings
+    Route::get('/boat-bookings', [FishingBoatController::class, 'myBookings']);
+    Route::post('/fishing-boats/{id}/book', [FishingBoatController::class, 'book']);
+    Route::delete('/boat-bookings/{id}', [FishingBoatController::class, 'cancelBooking']);
 
     // Catches
     Route::post('/catches', [CatchController::class, 'store']);
