@@ -21,6 +21,7 @@ class FishCatch extends Model implements HasMedia
         'bait_used',
         'fishing_method',
         'caption',
+        'fishing_lesson',
         'location',
         'latitude',
         'longitude',
@@ -47,6 +48,16 @@ class FishCatch extends Model implements HasMedia
     public function comments()
     {
         return $this->hasMany(Comment::class, 'catch_id');
+    }
+
+    public function lessonConfirmations()
+    {
+        return $this->hasMany(CatchLessonConfirmation::class, 'catch_id');
+    }
+
+    public function starGifts()
+    {
+        return $this->hasMany(CatchStarGift::class, 'catch_id');
     }
 
     public function registerMediaCollections(): void

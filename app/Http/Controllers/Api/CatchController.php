@@ -6,11 +6,16 @@ use App\Http\Controllers\Controller;
 use App\Models\FishCatch;
 use App\Models\Like;
 use App\Models\Comment;
+use App\Services\WalletService;
+use App\Support\CatchEconomyPresenter;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
 class CatchController extends Controller
 {
+    public function __construct(private WalletService $wallet)
+    {
+    }
     /**
      * Collect uploaded catch photos from every field name PHP might use.
      * CloudPanel / nginx sometimes expose `media_files[]` under a different key.
@@ -55,6 +60,7 @@ class CatchController extends Controller
             'bait_used'      => 'nullable|string|max:255',
             'fishing_method' => 'nullable|string|max:255',
             'caption'        => 'nullable|string|max:1000',
+            'fishing_lesson' => 'nullable|string|max:2000',
             'location'       => 'nullable|string|max:255',
             'latitude'       => 'nullable|numeric',
             'longitude'      => 'nullable|numeric',
@@ -74,6 +80,7 @@ class CatchController extends Controller
             'bait_used'      => $request->bait_used,
             'fishing_method' => $request->fishing_method,
             'caption'        => $request->caption,
+            'fishing_lesson' => $request->fishing_lesson,
             'location'       => $request->location,
             'latitude'       => $request->latitude,
             'longitude'      => $request->longitude,
@@ -121,14 +128,30 @@ class CatchController extends Controller
             Log::warning('Catch posted but no files reached PHP — likely upload limit', $uploadDebug);
         }
 
+        $hasLesson = ! empty(trim((string) $request->fishing_lesson));
+        $fpAmount  = $hasLesson
+            ? $this->wallet->setting('fish_points_post_lesson', '15')
+            : $this->wallet->setting('fish_points_post_catch', '10');
+
+        $this->wallet->creditFishPoints(
+            $request->user(),
+            $fpAmount,
+            $hasLesson ? 'post_catch_lesson' : 'post_catch',
+            'catch',
+            (int) $catch->id,
+            $hasLesson ? 'Posted a catch with a fishing lesson' : 'Posted a catch'
+        );
+
         // Reload with relations the frontend needs; media_url/media_urls
         // are auto-appended via FishCatch model accessors.
         $catch->load(['user', 'media']);
+        CatchEconomyPresenter::enrich($catch, $request->user()->id);
 
         return response()->json([
-            'message'       => 'Catch posted successfully!',
-            'catch'         => $catch,
-            'upload_debug'  => $uploadDebug,
+            'message'            => 'Catch posted successfully!',
+            'catch'              => $catch,
+            'fish_points_earned' => $fpAmount,
+            'upload_debug'       => $uploadDebug,
         ], 201);
     }
 
@@ -177,6 +200,7 @@ class CatchController extends Controller
             'bait_used'      => 'nullable|string|max:255',
             'fishing_method' => 'nullable|string|max:255',
             'caption'        => 'nullable|string|max:1000',
+            'fishing_lesson' => 'nullable|string|max:2000',
             'location'       => 'nullable|string|max:255',
         ]);
 
@@ -187,6 +211,7 @@ class CatchController extends Controller
             'bait_used',
             'fishing_method',
             'caption',
+            'fishing_lesson',
             'location',
         ]));
 

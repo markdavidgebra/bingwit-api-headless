@@ -23,6 +23,12 @@ use App\Http\Controllers\Api\FishingBoatController;
 use App\Http\Controllers\Api\Admin\TournamentAdminController;
 use App\Http\Controllers\Api\Admin\FishingBoatAdminController;
 use App\Http\Controllers\Api\Admin\CatchAdminController;
+use App\Http\Controllers\Api\Admin\EconomyAdminController;
+use App\Http\Controllers\Api\WalletController;
+use App\Http\Controllers\Api\CatchEconomyController;
+use App\Http\Controllers\Api\GearDonationController;
+use App\Http\Controllers\Api\MerchantGiftController;
+use App\Http\Controllers\Api\RewardController;
 // ─── Public Routes ────────────────────────────────────────
 
 // ─── Diagnostics (Public, read-only) ──────────────────────
@@ -36,6 +42,10 @@ Route::get('/marketplace/search', [MarketplaceController::class, 'search']);
 Route::get('/marketplace/categories', [MarketplaceController::class, 'categories']);
 Route::get('/marketplace/categories/{id}', [MarketplaceController::class, 'byCategory']);
 Route::get('/marketplace/products/{id}/reviews', [ReviewController::class, 'index']);
+
+Route::get('/rewards', [RewardController::class, 'index']);
+Route::get('/merchant-gifts/catalog', [MerchantGiftController::class, 'catalog']);
+Route::get('/wallet/settings', [WalletController::class, 'settings']);
 
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
@@ -155,6 +165,27 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/fishing-boats/{id}', [FishingBoatAdminController::class, 'destroy']);
         Route::get('/fishing-boats/{id}/bookings', [FishingBoatAdminController::class, 'bookings']);
         Route::put('/boat-bookings/{bookingId}/status', [FishingBoatAdminController::class, 'updateBookingStatus']);
+
+        // Economy management
+        Route::get('/economy/overview', [EconomyAdminController::class, 'overview']);
+        Route::get('/economy/wallets', [EconomyAdminController::class, 'wallets']);
+        Route::post('/economy/wallets/{userId}/adjust', [EconomyAdminController::class, 'adjustWallet']);
+        Route::get('/economy/transactions', [EconomyAdminController::class, 'transactions']);
+        Route::get('/economy/catch-gifts', [EconomyAdminController::class, 'catchGifts']);
+        Route::get('/economy/gear-donations', [EconomyAdminController::class, 'gearDonations']);
+        Route::get('/economy/merchant-gifts', [EconomyAdminController::class, 'merchantGifts']);
+        Route::get('/economy/settings', [EconomyAdminController::class, 'settings']);
+        Route::put('/economy/settings', [EconomyAdminController::class, 'updateSettings']);
+        Route::get('/economy/rewards', [EconomyAdminController::class, 'rewards']);
+        Route::post('/economy/rewards', [EconomyAdminController::class, 'storeReward']);
+        Route::put('/economy/rewards/{id}', [EconomyAdminController::class, 'updateReward']);
+        Route::delete('/economy/rewards/{id}', [EconomyAdminController::class, 'deleteReward']);
+        Route::get('/economy/gift-catalog', [EconomyAdminController::class, 'giftCatalog']);
+        Route::post('/economy/gift-catalog', [EconomyAdminController::class, 'storeGiftCatalog']);
+        Route::put('/economy/gift-catalog/{id}', [EconomyAdminController::class, 'updateGiftCatalog']);
+        Route::delete('/economy/gift-catalog/{id}', [EconomyAdminController::class, 'deleteGiftCatalog']);
+        Route::get('/economy/redemptions', [EconomyAdminController::class, 'redemptions']);
+        Route::post('/economy/redemptions/{id}/fulfill', [EconomyAdminController::class, 'fulfillRedemption']);
     });
 
     // Marketplace (Protected)
@@ -200,6 +231,20 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/catches/{id}/like', [CatchController::class, 'like']);
     Route::post('/catches/{id}/comment', [CatchController::class, 'comment']);
     Route::delete('/comments/{id}', [CatchController::class, 'deleteComment']);
+
+    // Wallet & economy
+    Route::get('/wallet', [WalletController::class, 'show']);
+    Route::post('/wallet/convert', [WalletController::class, 'convert']);
+    Route::post('/catches/{id}/fish-points', [CatchEconomyController::class, 'giftFishPoints']);
+    Route::post('/catches/{id}/stars', [CatchEconomyController::class, 'giftStars']);
+    Route::post('/catches/{id}/confirm-lesson', [CatchEconomyController::class, 'confirmLesson']);
+    Route::delete('/catches/{id}/confirm-lesson', [CatchEconomyController::class, 'unconfirmLesson']);
+    Route::post('/donations', [GearDonationController::class, 'store']);
+    Route::get('/donations/mine', [GearDonationController::class, 'myDonations']);
+    Route::put('/donations/{id}/status', [GearDonationController::class, 'updateStatus']);
+    Route::post('/vendors/{id}/gifts', [MerchantGiftController::class, 'send']);
+    Route::post('/rewards/{id}/redeem', [RewardController::class, 'redeem']);
+    Route::get('/redemptions/mine', [RewardController::class, 'myRedemptions']);
 
     // Feed
     Route::get('/feed/personal', [FeedController::class, 'personal']);

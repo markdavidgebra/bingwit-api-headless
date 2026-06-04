@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\FishCatch;
+use App\Support\CatchEconomyPresenter;
+use App\Support\OptionalBearerUser;
 use Illuminate\Http\Request;
 
 class FeedController extends Controller
@@ -25,6 +27,11 @@ class FeedController extends Controller
                             ->withCount(['likes', 'comments'])
                             ->latest()
                             ->paginate(15);
+
+        CatchEconomyPresenter::enrich(
+            $catches->getCollection(),
+            OptionalBearerUser::id($request)
+        );
 
         return response()->json($catches);
     }
@@ -59,6 +66,11 @@ class FeedController extends Controller
                             ->latest()
                             ->paginate(15);
 
+        CatchEconomyPresenter::enrich(
+            $catches->getCollection(),
+            $request->user()->id
+        );
+
         return response()->json($catches);
     }
 
@@ -92,6 +104,9 @@ class FeedController extends Controller
             $likedByMe = $catch->likes()
                                ->where('user_id', $request->user()->id)
                                ->exists();
+            CatchEconomyPresenter::enrich($catch, $request->user()->id);
+        } else {
+            CatchEconomyPresenter::enrich($catch, null);
         }
 
         return response()->json([

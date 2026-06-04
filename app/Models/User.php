@@ -21,6 +21,8 @@ class User extends Authenticatable implements HasMedia
         'bio',
         'location',
         'fishing_style',
+        'fish_points',
+        'stars',
         'social_provider',
         'social_id',
     ];
