@@ -188,7 +188,7 @@ class CatchController extends Controller
     public function show($id)
     {
         $catch = FishCatch::with(['user', 'comments.user', 'media'])
-                          ->withCount(['likes', 'comments'])
+                          ->withReactionCounts()
                           ->findOrFail($id);
 
         return response()->json([
@@ -202,7 +202,7 @@ class CatchController extends Controller
     public function userCatches($userId)
     {
         $catches = FishCatch::with(['user', 'media'])
-                            ->withCount(['likes', 'comments'])
+                            ->withReactionCounts()
                             ->where('user_id', $userId)
                             ->latest()
                             ->get();
@@ -269,24 +269,80 @@ class CatchController extends Controller
         ]);
     }
 
-    // LIKE OR UNLIKE A CATCH (toggle)
+    // LIKE OR UNLIKE A CATCH (toggle thumbs up)
     public function like(Request $request, $id)
     {
+        return $this->toggleReaction($request, $id, Like::TYPE_LIKE);
+    }
+
+    // LOVE OR UNLOVE A CATCH (toggle heart)
+    public function love(Request $request, $id)
+    {
+        return $this->toggleReaction($request, $id, Like::TYPE_LOVE);
+    }
+
+    private function toggleReaction(Request $request, int $id, string $type)
+    {
+        FishCatch::findOrFail($id);
+
         $existing = Like::where('user_id', $request->user()->id)
                         ->where('catch_id', $id)
+                        ->where('type', $type)
                         ->first();
 
         if ($existing) {
             $existing->delete();
-            return response()->json(['message' => 'Catch unliked.']);
+            $message = $type === Like::TYPE_LOVE
+                ? 'Catch unloved.'
+                : 'Catch unliked.';
+            $active = false;
+        } else {
+            $opposite = $type === Like::TYPE_LOVE
+                ? Like::TYPE_LIKE
+                : Like::TYPE_LOVE;
+
+            Like::where('user_id', $request->user()->id)
+                ->where('catch_id', $id)
+                ->where('type', $opposite)
+                ->delete();
+
+            Like::create([
+                'user_id'  => $request->user()->id,
+                'catch_id' => $id,
+                'type'     => $type,
+            ]);
+            $message = $type === Like::TYPE_LOVE
+                ? 'Catch loved!'
+                : 'Catch liked!';
+            $active = true;
         }
 
-        Like::create([
-            'user_id'  => $request->user()->id,
-            'catch_id' => $id,
-        ]);
+        $userId = $request->user()->id;
 
-        return response()->json(['message' => 'Catch liked!']);
+        return response()->json(array_merge([
+            'message'     => $message,
+            'active'      => $active,
+            'liked_by_me' => Like::where('user_id', $userId)
+                                 ->where('catch_id', $id)
+                                 ->where('type', Like::TYPE_LIKE)
+                                 ->exists(),
+            'loved_by_me' => Like::where('user_id', $userId)
+                                 ->where('catch_id', $id)
+                                 ->where('type', Like::TYPE_LOVE)
+                                 ->exists(),
+        ], $this->reactionCounts($id)));
+    }
+
+    private function reactionCounts(int $catchId): array
+    {
+        return [
+            'likes_count' => Like::where('catch_id', $catchId)
+                                 ->where('type', Like::TYPE_LIKE)
+                                 ->count(),
+            'loves_count' => Like::where('catch_id', $catchId)
+                                 ->where('type', Like::TYPE_LOVE)
+                                 ->count(),
+        ];
     }
 
     // COMMENT ON A CATCH

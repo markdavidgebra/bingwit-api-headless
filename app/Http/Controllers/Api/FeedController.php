@@ -24,7 +24,7 @@ class FeedController extends Controller
                                 },
                                 'media',
                             ])
-                            ->withCount(['likes', 'comments'])
+                            ->withReactionCounts()
                             ->latest()
                             ->paginate(15);
 
@@ -61,7 +61,7 @@ class FeedController extends Controller
                                 },
                                 'media',
                             ])
-                            ->withCount(['likes', 'comments'])
+                            ->withReactionCounts()
                             ->whereIn('user_id', $followingIds)
                             ->latest()
                             ->paginate(15);
@@ -96,24 +96,20 @@ class FeedController extends Controller
                         },
                         'media',
                     ])
-                    ->withCount(['likes', 'comments'])
+                    ->withReactionCounts()
                     ->findOrFail($id);
 
-        $likedByMe = false;
-        if ($request->user()) {
-            $likedByMe = $catch->likes()
-                               ->where('user_id', $request->user()->id)
-                               ->exists();
-            CatchEconomyPresenter::enrich($catch, $request->user()->id);
-        } else {
-            CatchEconomyPresenter::enrich($catch, null);
-        }
+        CatchEconomyPresenter::enrich(
+            $catch,
+            $request->user()?->id
+        );
 
         return response()->json([
             'catch'       => $catch,
             'media_url'   => $catch->media_url,
             'media_urls'  => $catch->media_urls,
-            'liked_by_me' => $likedByMe,
+            'liked_by_me' => (bool) $catch->liked_by_me,
+            'loved_by_me' => (bool) $catch->loved_by_me,
         ]);
     }
 
@@ -136,12 +132,17 @@ class FeedController extends Controller
                                 },
                                 'media',
                             ])
-                            ->withCount(['likes', 'comments'])
+                            ->withReactionCounts()
                             ->where('fish_species', 'like', "%{$keyword}%")
                             ->orWhere('location',    'like', "%{$keyword}%")
                             ->orWhere('caption',     'like', "%{$keyword}%")
                             ->latest()
                             ->paginate(15);
+
+        CatchEconomyPresenter::enrich(
+            $catches->getCollection(),
+            OptionalBearerUser::id($request)
+        );
 
         return response()->json($catches);
     }

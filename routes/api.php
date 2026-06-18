@@ -223,6 +223,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/catches/{id}', [CatchController::class, 'update']);
     Route::delete('/catches/{id}', [CatchController::class, 'destroy']);
     Route::post('/catches/{id}/like', [CatchController::class, 'like']);
+    Route::post('/catches/{id}/love', [CatchController::class, 'love']);
     Route::post('/catches/{id}/comment', [CatchController::class, 'comment']);
     Route::delete('/comments/{id}', [CatchController::class, 'deleteComment']);
 

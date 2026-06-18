@@ -45,6 +45,15 @@ class FishCatch extends Model implements HasMedia
         return $this->hasMany(Like::class, 'catch_id');
     }
 
+    public function scopeWithReactionCounts($query)
+    {
+        return $query->withCount([
+            'comments',
+            'likes as likes_count' => fn ($q) => $q->where('type', Like::TYPE_LIKE),
+            'likes as loves_count' => fn ($q) => $q->where('type', Like::TYPE_LOVE),
+        ]);
+    }
+
     public function comments()
     {
         return $this->hasMany(Comment::class, 'catch_id');
