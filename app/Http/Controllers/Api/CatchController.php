@@ -29,10 +29,6 @@ class CatchController extends Controller
             $files = array_merge($files, is_array($incoming) ? $incoming : [$incoming]);
         }
 
-        if ($request->hasFile('media')) {
-            $files[] = $request->file('media');
-        }
-
         foreach ($request->allFiles() as $key => $value) {
             if ($key === 'media_files' || $key === 'media') {
                 continue;
@@ -47,7 +43,40 @@ class CatchController extends Controller
             }
         }
 
-        return array_values(array_filter($files));
+        // Legacy single-file field — only when no multi-file uploads were sent.
+        if (empty($files) && $request->hasFile('media')) {
+            $files[] = $request->file('media');
+        }
+
+        return $this->dedupeUploadedFiles(array_values(array_filter($files)));
+    }
+
+    /**
+     * Drop duplicate uploads (e.g. same file sent as both media and media_files[0]).
+     */
+    private function dedupeUploadedFiles(array $files): array
+    {
+        $unique = [];
+        $seenHashes = [];
+
+        foreach ($files as $file) {
+            try {
+                $hash = md5_file($file->getRealPath());
+            } catch (\Throwable) {
+                $hash = null;
+            }
+
+            if ($hash !== null) {
+                if (isset($seenHashes[$hash])) {
+                    continue;
+                }
+                $seenHashes[$hash] = true;
+            }
+
+            $unique[] = $file;
+        }
+
+        return $unique;
     }
 
     // POST A NEW CATCH

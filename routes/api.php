@@ -10,7 +10,6 @@ use App\Http\Controllers\Api\ForecastController;
 use App\Http\Controllers\Api\MapController;
 use App\Http\Controllers\Api\LeaderboardController;
 use App\Http\Controllers\Api\NotificationController;
-use App\Http\Controllers\Api\GroupController;
 use App\Http\Controllers\Api\MarketplaceController;
 use App\Http\Controllers\Api\WishlistController;
 use App\Http\Controllers\Api\ReviewController;
@@ -84,11 +83,6 @@ Route::get('/leaderboard/all-time-most', [LeaderboardController::class, 'allTime
 Route::get('/users/{id}', [ProfileController::class, 'show']);
 Route::get('/users/{id}/catches', [CatchController::class, 'userCatches']);
 Route::get('/catches/{id}', [CatchController::class, 'show']);
-
-// Groups 
-Route::get('/groups', [GroupController::class, 'index']);
-Route::get('/groups/{id}', [GroupController::class, 'show']);
-Route::get('/groups/{id}/posts', [GroupController::class, 'posts']);
 
 // ─── Protected Routes ─────────────────────────────────────
 
@@ -213,7 +207,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/users/{id}/follow', [ProfileController::class, 'follow']);
     Route::post('/users/{id}/unfollow', [ProfileController::class, 'unfollow']);
     Route::get('/my-following', [ProfileController::class, 'myFollowing']);
-
+    Route::get('/anglers/suggested', [ProfileController::class, 'suggestedAnglers']);
 
     // Tournaments (auth users register/withdraw)
     Route::post('/tournaments/{id}/register', [TournamentController::class, 'register']);
@@ -263,13 +257,4 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/notifications/{id}', [NotificationController::class, 'destroy']);
     Route::post('/notifications/send', [NotificationController::class, 'send']);
 
-    // Groups 
-    Route::get('/groups/suggested/list', [GroupController::class, 'suggested']);
-    Route::get('/anglers/suggested', [GroupController::class, 'suggestedAnglers']);
-    Route::get('/my-groups', [GroupController::class, 'myGroups']);
-    Route::post('/groups', [GroupController::class, 'store']);
-    Route::delete('/groups/{id}', [GroupController::class, 'destroy']);
-    Route::post('/groups/{id}/join', [GroupController::class, 'join']);
-    Route::post('/groups/{id}/leave', [GroupController::class, 'leave']);
-    Route::post('/groups/{id}/posts', [GroupController::class, 'createPost']);
 });

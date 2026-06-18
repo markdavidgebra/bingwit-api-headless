@@ -71,7 +71,24 @@ class FishCatch extends Model implements HasMedia
     protected function mediaUrls(): Attribute
     {
         return Attribute::get(function () {
+            $seenHashes = [];
+
             return $this->getMedia('catch_media')
+                        ->filter(function ($media) use (&$seenHashes) {
+                            try {
+                                $hash = md5_file($media->getPath());
+                            } catch (\Throwable) {
+                                return true;
+                            }
+
+                            if (isset($seenHashes[$hash])) {
+                                return false;
+                            }
+
+                            $seenHashes[$hash] = true;
+
+                            return true;
+                        })
                         ->map(fn ($m) => $m->getUrl())
                         ->values()
                         ->all();

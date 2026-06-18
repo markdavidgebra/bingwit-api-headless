@@ -180,14 +180,39 @@ class ProfileController extends Controller
         return response()->json($following);
     }
 
-    // GET ALL USERS (for admin)
-    // GET ALL USERS FOR ADMIN DROPDOWN
-public function allUsers()
-{
-    $users = User::select('id', 'name', 'email')
-                              ->orderBy('name')
-                              ->get();
+    // GET SUGGESTED ANGLERS (not following yet)
+    public function suggestedAnglers(Request $request)
+    {
+        $userId = $request->user()->id;
 
-    return response()->json($users);
-}
+        $followingIds = $request->user()
+            ->following()
+            ->pluck('users.id');
+
+        $excludeIds = $followingIds->push($userId);
+
+        $anglers = User::whereNotIn('id', $excludeIds)
+            ->withCount('catches')
+            ->latest()
+            ->limit(10)
+            ->get([
+                'id',
+                'name',
+                'profile_picture',
+                'location',
+                'fishing_style',
+            ]);
+
+        return response()->json($anglers);
+    }
+
+    // GET ALL USERS FOR ADMIN DROPDOWN
+    public function allUsers()
+    {
+        $users = User::select('id', 'name', 'email')
+            ->orderBy('name')
+            ->get();
+
+        return response()->json($users);
+    }
 }
