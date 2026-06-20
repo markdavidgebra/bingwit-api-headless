@@ -23,6 +23,7 @@ use App\Http\Controllers\Api\Admin\TournamentAdminController;
 use App\Http\Controllers\Api\Admin\FishingBoatAdminController;
 use App\Http\Controllers\Api\Admin\CatchAdminController;
 use App\Http\Controllers\Api\Admin\EconomyAdminController;
+use App\Http\Controllers\Api\Admin\UserAdminController;
 use App\Http\Controllers\Api\WalletController;
 use App\Http\Controllers\Api\CatchEconomyController;
 use App\Http\Controllers\Api\GearDonationController;
@@ -62,8 +63,10 @@ Route::get('/feed/announcements', [TournamentController::class, 'announcements']
 
 // ─── Tournaments (Public) ─────────────────────────────────
 Route::get('/tournaments', [TournamentController::class, 'index']);
-Route::get('/tournaments/{id}', [TournamentController::class, 'show']);
+Route::get('/tournaments/{id}/days/{dayId}/leaderboard', [TournamentController::class, 'dayLeaderboard']);
+Route::get('/tournaments/{id}/days', [TournamentController::class, 'days']);
 Route::get('/tournaments/{id}/posts', [TournamentController::class, 'posts']);
+Route::get('/tournaments/{id}', [TournamentController::class, 'show']);
 
 // ─── Fishing Boats (Public) ───────────────────────────────
 Route::get('/fishing-boats', [FishingBoatController::class, 'index']);
@@ -78,6 +81,8 @@ Route::get('/leaderboard/biggest', [LeaderboardController::class, 'biggestCatch'
 Route::get('/leaderboard/most', [LeaderboardController::class, 'mostCatches']);
 Route::get('/leaderboard/all-time-biggest', [LeaderboardController::class, 'allTimeBiggest']);
 Route::get('/leaderboard/all-time-most', [LeaderboardController::class, 'allTimeMost']);
+Route::get('/leaderboard/tournament-active', [LeaderboardController::class, 'activeTournamentBoard']);
+Route::get('/leaderboard/tournament-days/{dayId}', [LeaderboardController::class, 'tournamentDay']);
 
 // Profiles & Catches
 Route::get('/users/{id}', [ProfileController::class, 'show']);
@@ -137,6 +142,13 @@ Route::middleware('auth:sanctum')->group(function () {
         // Catch moderation
         Route::delete('/catches/{id}', [CatchAdminController::class, 'destroy']);
 
+        // ─── User management ──────────────────────────────────
+        Route::get('/users', [UserAdminController::class, 'index']);
+        Route::get('/users/{id}', [UserAdminController::class, 'show']);
+        Route::get('/users/{id}/tournaments', [UserAdminController::class, 'tournaments']);
+        Route::post('/users/{id}/tournaments', [UserAdminController::class, 'joinTournament']);
+        Route::delete('/users/{id}/tournaments/{tournamentId}', [UserAdminController::class, 'leaveTournament']);
+
         // ─── Tournament management ────────────────────────────
         Route::get('/tournaments', [TournamentAdminController::class, 'index']);
         Route::post('/tournaments', [TournamentAdminController::class, 'store']);
@@ -147,6 +159,13 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/tournaments/{id}/posts', [TournamentAdminController::class, 'posts']);
         Route::post('/tournaments/{id}/posts', [TournamentAdminController::class, 'createPost']);
         Route::get('/tournaments/{id}/participants', [TournamentAdminController::class, 'participants']);
+        Route::post('/tournaments/{id}/participants', [TournamentAdminController::class, 'addParticipant']);
+        Route::delete('/tournaments/{id}/participants/{participantId}', [TournamentAdminController::class, 'removeParticipant']);
+        Route::get('/users/search', [TournamentAdminController::class, 'searchUsers']);
+        Route::get('/tournaments/{id}/days', [TournamentAdminController::class, 'days']);
+        Route::get('/tournaments/{id}/days/{dayId}/participants', [TournamentAdminController::class, 'dayParticipants']);
+        Route::put('/tournaments/{id}/days/{dayId}/participants', [TournamentAdminController::class, 'syncDayParticipants']);
+        Route::get('/tournaments/{id}/days/{dayId}/leaderboard', [TournamentAdminController::class, 'dayLeaderboard']);
         Route::put('/tournament-posts/{postId}', [TournamentAdminController::class, 'updatePost']);
         Route::delete('/tournament-posts/{postId}', [TournamentAdminController::class, 'destroyPost']);
 
@@ -210,6 +229,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/anglers/suggested', [ProfileController::class, 'suggestedAnglers']);
 
     // Tournaments (auth users register/withdraw)
+    Route::get('/tournaments/my-active-days', [TournamentController::class, 'myActiveDays']);
     Route::post('/tournaments/{id}/register', [TournamentController::class, 'register']);
     Route::delete('/tournaments/{id}/register', [TournamentController::class, 'unregister']);
 

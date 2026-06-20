@@ -61,4 +61,16 @@ class CatchEconomyPresenter
             $catch->setAttribute('loved_by_me', isset($lovedByMe[$catch->id]));
         }
     }
+
+    public static function enrichAll(Collection|FishCatch $catches, ?int $viewerId = null): void
+    {
+        self::enrich($catches, $viewerId);
+
+        $items = $catches instanceof FishCatch
+            ? collect([$catches])
+            : $catches;
+
+        app(\App\Services\TournamentRankingService::class)
+            ->enrichCatchTournamentRanks($items);
+    }
 }

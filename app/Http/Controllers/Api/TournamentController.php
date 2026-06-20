@@ -6,10 +6,15 @@ use App\Http\Controllers\Controller;
 use App\Models\Tournament;
 use App\Models\TournamentParticipant;
 use App\Models\TournamentPost;
+use App\Services\TournamentRankingService;
 use Illuminate\Http\Request;
 
 class TournamentController extends Controller
 {
+    public function __construct(private TournamentRankingService $ranking)
+    {
+    }
+
     /**
      * GET /api/tournaments  (public)
      * List tournaments. Supports optional ?status filter.
@@ -173,10 +178,65 @@ class TournamentController extends Controller
                                 ])
                                 ->latest()
                                 ->limit(10)
-                                ->get();
+                                ->get()
+                                ->map(fn (TournamentPost $post) => [
+                                    'id'                 => $post->id,
+                                    'tournament_id'      => $post->tournament_id,
+                                    'title'              => $post->title,
+                                    'body'               => $post->body,
+                                    'cross_post_to_feed' => $post->cross_post_to_feed,
+                                    'created_at'         => $post->created_at,
+                                    'updated_at'         => $post->updated_at,
+                                    'tournament'         => $post->tournament,
+                                    'admin'              => $post->admin,
+                                ]);
 
         return response()->json([
             'data' => $posts,
         ]);
+    }
+
+    /**
+     * GET /api/tournaments/{id}/days
+     */
+    public function days($id)
+    {
+        $tournament = Tournament::findOrFail($id);
+        $days = $this->ranking->syncDays($tournament)
+            ->loadCount('dayParticipants');
+
+        return response()->json(['data' => $days]);
+    }
+
+    /**
+     * GET /api/tournaments/{id}/days/{dayId}/leaderboard
+     */
+    public function dayLeaderboard(Request $request, $id, $dayId)
+    {
+        $tournament = Tournament::findOrFail($id);
+        $day = $tournament->days()->findOrFail($dayId);
+        $type = $request->query('type', 'biggest');
+
+        if (! in_array($type, ['biggest', 'most'], true)) {
+            $type = 'biggest';
+        }
+
+        $board = $this->ranking->dayLeaderboard($day, $type);
+
+        return response()->json(array_merge([
+            'day'        => $day,
+            'tournament' => $tournament->only(['id', 'name', 'status']),
+            'label'      => $day->day_date->format('M j, Y'),
+        ], $board));
+    }
+
+    /**
+     * GET /api/tournaments/my-active-days  (auth)
+     */
+    public function myActiveDays(Request $request)
+    {
+        $days = $this->ranking->activeDaysForUser($request->user()->id);
+
+        return response()->json(['data' => $days]);
     }
 }

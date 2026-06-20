@@ -7,14 +7,18 @@ use App\Models\FishCatch;
 use App\Models\Like;
 use App\Models\Comment;
 use App\Services\WalletService;
+use App\Services\TournamentRankingService;
 use App\Support\CatchEconomyPresenter;
+use App\Support\OptionalBearerUser;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
 class CatchController extends Controller
 {
-    public function __construct(private WalletService $wallet)
-    {
+    public function __construct(
+        private WalletService $wallet,
+        private TournamentRankingService $tournamentRanking,
+    ) {
     }
     /**
      * Collect uploaded catch photos from every field name PHP might use.
@@ -98,12 +102,19 @@ class CatchController extends Controller
             // New: up to 10 photos
             'media_files'    => 'nullable|array|max:10',
             'media_files.*'  => 'file|mimes:jpg,jpeg,png|max:51200',
-            'media_type'     => 'nullable|in:photo,video',
+            'media_type'        => 'nullable|in:photo,video',
+            'tournament_day_id' => 'nullable|integer|exists:tournament_days,id',
         ]);
 
+        $tournamentDayId = $this->tournamentRanking->resolveTournamentDayId(
+            $request->user(),
+            $request->integer('tournament_day_id') ?: null
+        );
+
         $catch = FishCatch::create([
-            'user_id'        => $request->user()->id,
-            'fish_species'   => $request->fish_species,
+            'user_id'           => $request->user()->id,
+            'tournament_day_id' => $tournamentDayId,
+            'fish_species'      => $request->fish_species,
             'weight_kg'      => $request->weight_kg,
             'length_cm'      => $request->length_cm,
             'bait_used'      => $request->bait_used,
@@ -173,23 +184,33 @@ class CatchController extends Controller
 
         // Reload with relations the frontend needs; media_url/media_urls
         // are auto-appended via FishCatch model accessors.
-        $catch->load(['user', 'media']);
-        CatchEconomyPresenter::enrich($catch, $request->user()->id);
+        $catch->load(['user', 'media', 'tournamentDay.tournament']);
+        CatchEconomyPresenter::enrichAll($catch, $request->user()->id);
 
-        return response()->json([
+        $response = [
             'message'            => 'Catch posted successfully!',
             'catch'              => $catch,
             'fish_points_earned' => $fpAmount,
             'upload_debug'       => $uploadDebug,
-        ], 201);
+        ];
+
+        if ($tournamentDayId) {
+            $response['tournament_day_id'] = $tournamentDayId;
+            $response['tournament_scored'] = true;
+            $response['message'] = 'Catch posted and counted for today\'s tournament ranking!';
+        }
+
+        return response()->json($response, 201);
     }
 
     // VIEW A SINGLE CATCH
-    public function show($id)
+    public function show(Request $request, $id)
     {
         $catch = FishCatch::with(['user', 'comments.user', 'media'])
                           ->withReactionCounts()
                           ->findOrFail($id);
+
+        CatchEconomyPresenter::enrichAll($catch, $request->user()?->id);
 
         return response()->json([
             'catch'      => $catch,
@@ -199,13 +220,18 @@ class CatchController extends Controller
     }
 
     // VIEW ALL CATCHES BY A SPECIFIC USER
-    public function userCatches($userId)
+    public function userCatches(Request $request, $userId)
     {
         $catches = FishCatch::with(['user', 'media'])
                             ->withReactionCounts()
                             ->where('user_id', $userId)
                             ->latest()
                             ->get();
+
+        CatchEconomyPresenter::enrichAll(
+            $catches,
+            OptionalBearerUser::id($request)
+        );
 
         return response()->json($catches);
     }

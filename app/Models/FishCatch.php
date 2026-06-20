@@ -15,6 +15,7 @@ class FishCatch extends Model implements HasMedia
 
     protected $fillable = [
         'user_id',
+        'tournament_day_id',
         'fish_species',
         'weight_kg',
         'length_cm',
@@ -38,6 +39,11 @@ class FishCatch extends Model implements HasMedia
     public function user()
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function tournamentDay()
+    {
+        return $this->belongsTo(TournamentDay::class);
     }
 
     public function likes()

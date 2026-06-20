@@ -28,7 +28,7 @@ class FeedController extends Controller
                             ->latest()
                             ->paginate(15);
 
-        CatchEconomyPresenter::enrich(
+        CatchEconomyPresenter::enrichAll(
             $catches->getCollection(),
             OptionalBearerUser::id($request)
         );
@@ -66,7 +66,7 @@ class FeedController extends Controller
                             ->latest()
                             ->paginate(15);
 
-        CatchEconomyPresenter::enrich(
+        CatchEconomyPresenter::enrichAll(
             $catches->getCollection(),
             $request->user()->id
         );
@@ -99,7 +99,7 @@ class FeedController extends Controller
                     ->withReactionCounts()
                     ->findOrFail($id);
 
-        CatchEconomyPresenter::enrich(
+        CatchEconomyPresenter::enrichAll(
             $catch,
             $request->user()?->id
         );
@@ -139,7 +139,7 @@ class FeedController extends Controller
                             ->latest()
                             ->paginate(15);
 
-        CatchEconomyPresenter::enrich(
+        CatchEconomyPresenter::enrichAll(
             $catches->getCollection(),
             OptionalBearerUser::id($request)
         );

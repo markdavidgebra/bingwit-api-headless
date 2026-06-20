@@ -2,10 +2,15 @@
 
 namespace App\Models;
 
+use App\Support\PublicStorageUrl;
 use Illuminate\Database\Eloquent\Model;
+use Spatie\MediaLibrary\HasMedia;
+use Spatie\MediaLibrary\InteractsWithMedia;
 
-class TournamentPost extends Model
+class TournamentPost extends Model implements HasMedia
 {
+    use InteractsWithMedia;
+
     protected $fillable = [
         'tournament_id',
         'admin_id',
@@ -17,6 +22,8 @@ class TournamentPost extends Model
     protected $casts = [
         'cross_post_to_feed' => 'boolean',
     ];
+
+    protected $appends = ['image_urls'];
 
     public function tournament()
     {
@@ -34,5 +41,20 @@ class TournamentPost extends Model
     public function scopeAnnouncements($query)
     {
         return $query->where('cross_post_to_feed', true);
+    }
+
+    public function registerMediaCollections(): void
+    {
+        $this->addMediaCollection('images')
+             ->useDisk('public');
+    }
+
+    public function getImageUrlsAttribute(): array
+    {
+        return $this->getMedia('images')
+            ->map(fn ($media) => PublicStorageUrl::fromMedia($media))
+            ->filter()
+            ->values()
+            ->all();
     }
 }

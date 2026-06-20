@@ -56,6 +56,11 @@ class Tournament extends Model implements HasMedia
         return $this->hasMany(TournamentPost::class)->latest();
     }
 
+    public function days()
+    {
+        return $this->hasMany(TournamentDay::class)->orderBy('day_date');
+    }
+
     public function isParticipant($userId): bool
     {
         if (! $userId) {
