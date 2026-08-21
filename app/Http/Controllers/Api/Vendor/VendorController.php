@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Admin;
 use App\Models\Brand;
 use App\Models\Category;
+use App\Models\MerchantGift;
 use App\Models\Product;
 use App\Models\ProductImage;
 use App\Models\Vendor;
@@ -285,10 +286,29 @@ class VendorController extends Controller
             return response()->json(['data' => []]);
         }
 
-        $products = $vendor->products()
-                           ->with(['category', 'brand', 'primaryImage', 'images'])
-                           ->latest()
-                           ->paginate(20);
+        $query = $vendor->products()
+                           ->with(['category', 'brand', 'primaryImage', 'images']);
+
+        $stock = $request->query('stock');
+        if ($stock === 'out') {
+            $query->where('stock', '<=', 0);
+        } elseif ($stock === 'low') {
+            $query->whereBetween('stock', [1, 5]);
+        } elseif ($stock === 'attention') {
+            $query->where('stock', '<=', 5);
+        } elseif ($stock === 'ok') {
+            $query->where('stock', '>', 5);
+        }
+
+        $perPage = min(max((int) $request->query('per_page', 20), 1), 100);
+
+        if (in_array($stock, ['out', 'low', 'attention'], true)) {
+            $query->orderBy('stock')->orderByDesc('updated_at');
+        } else {
+            $query->latest();
+        }
+
+        $products = $query->paginate($perPage);
 
         return response()->json($products);
     }
@@ -485,6 +505,29 @@ class VendorController extends Controller
                 : 'Product deactivated.',
             'is_active' => $product->is_active,
         ]);
+    }
+
+    // GET GIFTS SENT TO THIS STORE
+    public function gifts(Request $request)
+    {
+        $vendor = $this->resolveVendor($request);
+
+        if (! $vendor) {
+            return response()->json(['data' => []]);
+        }
+
+        $perPage = min(max((int) $request->query('per_page', 25), 1), 100);
+
+        $gifts = MerchantGift::query()
+            ->where('vendor_id', $vendor->id)
+            ->with([
+                'sender:id,name',
+                'catalogItem:id,name,emoji,fish_points_cost',
+            ])
+            ->latest()
+            ->paginate($perPage);
+
+        return response()->json($gifts);
     }
 
     /**

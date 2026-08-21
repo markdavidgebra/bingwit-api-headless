@@ -29,6 +29,14 @@ use App\Http\Controllers\Api\CatchEconomyController;
 use App\Http\Controllers\Api\GearDonationController;
 use App\Http\Controllers\Api\MerchantGiftController;
 use App\Http\Controllers\Api\RewardController;
+use App\Http\Controllers\Api\ConnectController;
+use App\Http\Controllers\Api\ChatController;
+use App\Http\Controllers\Api\ModerationController;
+use App\Http\Controllers\Api\ResortController;
+use App\Http\Controllers\Api\Admin\ConnectAdminController;
+use App\Http\Controllers\Api\Admin\ReportAdminController;
+use App\Http\Controllers\Api\AccountDeletionRequestController;
+use App\Http\Controllers\Api\Admin\AccountDeletionAdminController;
 // ─── Public Routes ────────────────────────────────────────
 
 // ─── Diagnostics (Public, read-only) ──────────────────────
@@ -51,6 +59,9 @@ Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
 Route::post('/vendor/login', [AuthController::class, 'loginVendor']);
 Route::post('/admin/login', [AuthController::class, 'loginAdmin']);
+
+Route::post('/account-deletion-requests', [AccountDeletionRequestController::class, 'store'])
+    ->middleware('throttle:5,1');
 
 // Forecast
 Route::get('/forecast', [ForecastController::class, 'getForecast']);
@@ -75,6 +86,13 @@ Route::get('/fishing-boats/{id}', [FishingBoatController::class, 'show']);
 // Map
 Route::get('/map/spots', [MapController::class, 'spots']);
 Route::get('/map/nearby-catches', [MapController::class, 'nearbyCatches']);
+Route::get('/map/nearby-anglers', [MapController::class, 'nearbyAnglers']);
+
+// Connect / resorts (public browse)
+Route::get('/connect/search', [ConnectController::class, 'search']);
+Route::get('/anglers/search', [ProfileController::class, 'searchAnglers']);
+Route::get('/resorts', [ResortController::class, 'index']);
+Route::get('/resorts/{id}', [ResortController::class, 'show']);
 
 // Leaderboard
 Route::get('/leaderboard/biggest', [LeaderboardController::class, 'biggestCatch']);
@@ -97,6 +115,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // ─── Vendor Routes (Vendor or Admin) ──────────────────────
     Route::prefix('vendor')->middleware('vendor')->group(function () {
         Route::get('/dashboard', [VendorController::class, 'dashboard']);
+        Route::get('/gifts', [VendorController::class, 'gifts']);
         Route::get('/categories', [VendorController::class, 'categories']);
         Route::get('/brands', [VendorController::class, 'brands']);
         Route::get('/store', [VendorController::class, 'getStore']);
@@ -136,11 +155,23 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/products/{id}/feature', [ProductAdminController::class, 'toggleFeature']);
         Route::get('/categories', [ProductAdminController::class, 'categories']);
         Route::post('/categories', [ProductAdminController::class, 'createCategory']);
+        Route::put('/categories/{id}', [ProductAdminController::class, 'updateCategory']);
+        Route::delete('/categories/{id}', [ProductAdminController::class, 'destroyCategory']);
         Route::get('/brands', [ProductAdminController::class, 'brands']);
         Route::post('/brands', [ProductAdminController::class, 'createBrand']);
 
         // Catch moderation
         Route::delete('/catches/{id}', [CatchAdminController::class, 'destroy']);
+
+        // UGC reports (Play Store moderation)
+        Route::get('/reports', [ReportAdminController::class, 'index']);
+        Route::put('/reports/{id}', [ReportAdminController::class, 'update']);
+
+        // Account deletion requests (Play Store Data safety)
+        Route::get('/account-deletion-requests', [AccountDeletionAdminController::class, 'index']);
+        Route::get('/account-deletion-requests/{id}', [AccountDeletionAdminController::class, 'show']);
+        Route::post('/account-deletion-requests/{id}/process', [AccountDeletionAdminController::class, 'process']);
+        Route::post('/account-deletion-requests/{id}/reject', [AccountDeletionAdminController::class, 'reject']);
 
         // ─── User management ──────────────────────────────────
         Route::get('/users', [UserAdminController::class, 'index']);
@@ -178,6 +209,14 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/fishing-boats/{id}', [FishingBoatAdminController::class, 'destroy']);
         Route::get('/fishing-boats/{id}/bookings', [FishingBoatAdminController::class, 'bookings']);
         Route::put('/boat-bookings/{bookingId}/status', [FishingBoatAdminController::class, 'updateBookingStatus']);
+
+        // Connect — municipalities & resorts (localized management)
+        Route::get('/municipalities', [ConnectAdminController::class, 'municipalities']);
+        Route::post('/municipalities', [ConnectAdminController::class, 'storeMunicipality']);
+        Route::put('/municipalities/{id}', [ConnectAdminController::class, 'updateMunicipality']);
+        Route::get('/resorts', [ConnectAdminController::class, 'resorts']);
+        Route::post('/resorts', [ConnectAdminController::class, 'storeResort']);
+        Route::put('/resorts/{id}', [ConnectAdminController::class, 'updateResort']);
 
         // Economy management
         Route::get('/economy/overview', [EconomyAdminController::class, 'overview']);
@@ -226,7 +265,22 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/users/{id}/follow', [ProfileController::class, 'follow']);
     Route::post('/users/{id}/unfollow', [ProfileController::class, 'unfollow']);
     Route::get('/my-following', [ProfileController::class, 'myFollowing']);
+
+    // UGC safety — report & block (required for Play Store social/chat apps)
+    Route::post('/reports', [ModerationController::class, 'report']);
+    Route::get('/blocked-users', [ModerationController::class, 'blockedUsers']);
+    Route::get('/users/{id}/block-status', [ModerationController::class, 'blockStatus']);
+    Route::post('/users/{id}/block', [ModerationController::class, 'block']);
+    Route::delete('/users/{id}/block', [ModerationController::class, 'unblock']);
     Route::get('/anglers/suggested', [ProfileController::class, 'suggestedAnglers']);
+
+    // Chat with anglers
+    Route::get('/chat/inbox', [ChatController::class, 'inbox']);
+    Route::get('/chat/{userId}', [ChatController::class, 'thread']);
+    Route::post('/chat/{userId}', [ChatController::class, 'send']);
+
+    // Resort reviews
+    Route::post('/resorts/{id}/reviews', [ResortController::class, 'review']);
 
     // Tournaments (auth users register/withdraw)
     Route::get('/tournaments/my-active-days', [TournamentController::class, 'myActiveDays']);
@@ -250,6 +304,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // Wallet & economy
     Route::get('/wallet', [WalletController::class, 'show']);
     Route::post('/wallet/convert', [WalletController::class, 'convert']);
+    Route::post('/wallet/afilink-bonus', [WalletController::class, 'claimAfilink']);
     Route::post('/catches/{id}/fish-points', [CatchEconomyController::class, 'giftFishPoints']);
     Route::post('/catches/{id}/stars', [CatchEconomyController::class, 'giftStars']);
     Route::post('/catches/{id}/confirm-lesson', [CatchEconomyController::class, 'confirmLesson']);

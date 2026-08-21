@@ -11,6 +11,7 @@ class RewardItem extends Model
         'description',
         'image_url',
         'star_cost',
+        'fish_points_cost',
         'stock',
         'is_active',
     ];

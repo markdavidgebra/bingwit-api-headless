@@ -63,52 +63,58 @@ class EconomyAdminController extends Controller
     public function adjustWallet(Request $request, $userId, WalletService $wallet)
     {
         $data = $request->validate([
-            'fish_points_delta' => 'required|integer|not_in:0|between:-1000000,1000000',
+            'fish_points_delta' => 'nullable|integer|between:-1000000,1000000',
+            'stars_delta'       => 'nullable|integer|between:-1000000,1000000',
             'note'              => 'nullable|string|max:500',
         ]);
 
+        $fpDelta = (int) ($data['fish_points_delta'] ?? 0);
+        $starsDelta = (int) ($data['stars_delta'] ?? 0);
+
+        if ($fpDelta === 0 && $starsDelta === 0) {
+            return response()->json([
+                'message' => 'Provide fish_points_delta and/or stars_delta (non-zero).',
+            ], 422);
+        }
+
         $user  = User::findOrFail($userId);
         $admin = $request->user();
-        $delta = (int) $data['fish_points_delta'];
 
         $note = trim($data['note'] ?? '');
         if ($note === '') {
-            $note = $delta > 0 ? 'Manual grant by admin' : 'Manual deduction by admin';
+            $note = 'Manual wallet adjust by admin';
         }
         if ($admin) {
             $note .= ' (by ' . ($admin->name ?? 'admin') . ')';
         }
 
         try {
-            if ($delta > 0) {
-                $wallet->creditFishPoints(
-                    $user,
-                    $delta,
-                    'admin_grant',
-                    'admin',
-                    $admin?->id,
-                    $note
-                );
-            } else {
-                $wallet->spendFishPoints(
-                    $user,
-                    abs($delta),
-                    'admin_deduct',
-                    'admin',
-                    $admin?->id,
-                    $note
-                );
+            if ($fpDelta > 0) {
+                $wallet->creditFishPoints($user, $fpDelta, 'admin_grant', 'admin', $admin?->id, $note);
+            } elseif ($fpDelta < 0) {
+                $wallet->spendFishPoints($user, abs($fpDelta), 'admin_deduct', 'admin', $admin?->id, $note);
+            }
+
+            if ($starsDelta > 0) {
+                $wallet->creditStars($user, $starsDelta, 'admin_star_grant', 'admin', $admin?->id, $note);
+            } elseif ($starsDelta < 0) {
+                $wallet->spendStars($user, abs($starsDelta), 'admin_star_deduct', 'admin', $admin?->id, $note);
             }
         } catch (\RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
         $fresh = $user->fresh();
+        $parts = [];
+        if ($fpDelta !== 0) {
+            $parts[] = ($fpDelta > 0 ? '+' : '') . $fpDelta . ' FP';
+        }
+        if ($starsDelta !== 0) {
+            $parts[] = ($starsDelta > 0 ? '+' : '') . $starsDelta . ' Stars';
+        }
 
         return response()->json([
-            'message' => $delta > 0
-                ? "Added {$delta} Fish Points to {$fresh->name}."
-                : 'Removed ' . abs($delta) . " Fish Points from {$fresh->name}.",
+            'message' => 'Updated ' . $fresh->name . ': ' . implode(', ', $parts) . '.',
             'user' => [
                 'id'           => $fresh->id,
                 'name'         => $fresh->name,
@@ -206,13 +212,29 @@ class EconomyAdminController extends Controller
     public function storeReward(Request $request)
     {
         $data = $request->validate([
-            'name'        => 'required|string|max:255',
-            'description' => 'nullable|string',
-            'image_url'   => 'nullable|url|max:500',
-            'star_cost'   => 'required|integer|min:1',
-            'stock'       => 'required|integer|min:0',
-            'is_active'   => 'boolean',
+            'name'             => 'required|string|max:255',
+            'description'      => 'nullable|string',
+            'image_url'        => 'nullable|url|max:500',
+            'star_cost'        => 'nullable|integer|min:1',
+            'fish_points_cost' => 'nullable|integer|min:1',
+            'stock'            => 'required|integer|min:0',
+            'is_active'        => 'boolean',
         ]);
+
+        if (empty($data['fish_points_cost']) && empty($data['star_cost'])) {
+            return response()->json([
+                'message' => 'Provide fish_points_cost (preferred) or star_cost.',
+            ], 422);
+        }
+
+        if (empty($data['fish_points_cost']) && ! empty($data['star_cost'])) {
+            $rate = (int) (EconomySetting::where('key', 'fish_points_per_star')->value('value') ?? 10);
+            $data['fish_points_cost'] = max(1, ((int) $data['star_cost']) * max(1, $rate));
+        }
+
+        if (empty($data['star_cost'])) {
+            $data['star_cost'] = 1;
+        }
 
         $item = RewardItem::create($data);
 
@@ -224,12 +246,13 @@ class EconomyAdminController extends Controller
         $item = RewardItem::findOrFail($id);
 
         $data = $request->validate([
-            'name'        => 'sometimes|string|max:255',
-            'description' => 'nullable|string',
-            'image_url'   => 'nullable|url|max:500',
-            'star_cost'   => 'sometimes|integer|min:1',
-            'stock'       => 'sometimes|integer|min:0',
-            'is_active'   => 'boolean',
+            'name'             => 'sometimes|string|max:255',
+            'description'      => 'nullable|string',
+            'image_url'        => 'nullable|url|max:500',
+            'star_cost'        => 'sometimes|integer|min:1',
+            'fish_points_cost' => 'sometimes|integer|min:1',
+            'stock'            => 'sometimes|integer|min:0',
+            'is_active'        => 'boolean',
         ]);
 
         $item->update($data);

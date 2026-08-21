@@ -201,6 +201,33 @@ class WalletService
         });
     }
 
+    public function creditStars(
+        User $user,
+        int $amount,
+        string $type,
+        ?string $referenceType = null,
+        ?int $referenceId = null,
+        ?string $note = null
+    ): void {
+        if ($amount <= 0) {
+            return;
+        }
+
+        DB::transaction(function () use ($user, $amount, $type, $referenceType, $referenceId, $note) {
+            $user->increment('stars', $amount);
+
+            WalletTransaction::create([
+                'user_id'           => $user->id,
+                'type'              => $type,
+                'fish_points_delta' => 0,
+                'stars_delta'       => $amount,
+                'reference_type'    => $referenceType,
+                'reference_id'      => $referenceId,
+                'note'              => $note,
+            ]);
+        });
+    }
+
     public function convertFishPointsToStars(User $user, int $fishPoints): int
     {
         $rate = $this->setting('fish_points_per_star', '10');
@@ -230,7 +257,7 @@ class WalletService
 
             WalletTransaction::create([
                 'user_id'           => $locked->id,
-                'type'              => 'convert',
+                'type'              => 'convert_fp_to_stars',
                 'fish_points_delta' => -$fishPoints,
                 'stars_delta'       => $starsGained,
                 'note'              => 'Converted Fish Points to Stars',
@@ -238,5 +265,41 @@ class WalletService
         });
 
         return $starsGained;
+    }
+
+    /** Requirements: exchange Stars → Fish Points (1 Star = N FP). */
+    public function convertStarsToFishPoints(User $user, int $stars): int
+    {
+        $rate = $this->setting('fish_points_per_star', '10');
+        if ($rate < 1) {
+            throw new \RuntimeException('Conversion rate is not configured.');
+        }
+
+        if ($stars < 1) {
+            throw new \RuntimeException('Stars must be at least 1.');
+        }
+
+        $fishPointsGained = $stars * $rate;
+
+        DB::transaction(function () use ($user, $stars, $fishPointsGained) {
+            $locked = User::where('id', $user->id)->lockForUpdate()->first();
+
+            if ($locked->stars < $stars) {
+                throw new \RuntimeException('Not enough Stars.');
+            }
+
+            $locked->decrement('stars', $stars);
+            $locked->increment('fish_points', $fishPointsGained);
+
+            WalletTransaction::create([
+                'user_id'           => $locked->id,
+                'type'              => 'convert_stars_to_fp',
+                'fish_points_delta' => $fishPointsGained,
+                'stars_delta'       => -$stars,
+                'note'              => 'Converted Stars to Fish Points',
+            ]);
+        });
+
+        return $fishPointsGained;
     }
 }

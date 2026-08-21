@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\FishingSpot;
 use App\Models\SavedSpot;
 use App\Models\FishCatch;
+use App\Models\User;
+use App\Support\AnglerRanker;
 use Illuminate\Http\Request;
 
 class MapController extends Controller
@@ -99,6 +101,96 @@ class MapController extends Controller
             'center'    => ['latitude' => $lat, 'longitude' => $lon],
             'radius_km' => $radius,
             'catches'   => $catches,
+        ]);
+    }
+
+    /**
+     * Anglers active near a map point (from geolocated catches + spots they pinned).
+     * Returns pins with angler names for map labels / callouts.
+     */
+    public function nearbyAnglers(Request $request)
+    {
+        $request->validate([
+            'latitude' => 'required|numeric',
+            'longitude' => 'required|numeric',
+            'radius_km' => 'nullable|numeric|min:1|max:100',
+        ]);
+
+        $lat = (float) $request->latitude;
+        $lon = (float) $request->longitude;
+        $radius = (float) ($request->radius_km ?? 25);
+        $viewerId = $request->user()?->id;
+
+        $distanceKm = function (float $lat1, float $lon1, float $lat2, float $lon2): float {
+            $earth = 6371;
+            $dLat = deg2rad($lat2 - $lat1);
+            $dLon = deg2rad($lon2 - $lon1);
+            $a = sin($dLat / 2) ** 2
+                + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($dLon / 2) ** 2;
+
+            return $earth * (2 * atan2(sqrt($a), sqrt(1 - $a)));
+        };
+
+        $pinMap = [];
+        $collect = function ($userId, $plat, $plon) use (&$pinMap, $lat, $lon, $radius, $distanceKm) {
+            $uid = (int) $userId;
+            if ($uid < 1 || $plat === null || $plon === null) {
+                return;
+            }
+            $dist = $distanceKm($lat, $lon, (float) $plat, (float) $plon);
+            if ($dist > $radius) {
+                return;
+            }
+            if (! isset($pinMap[$uid]) || $dist < $pinMap[$uid]['distance_km']) {
+                $pinMap[$uid] = [
+                    'user_id' => $uid,
+                    'latitude' => (float) $plat,
+                    'longitude' => (float) $plon,
+                    'distance_km' => round($dist, 2),
+                ];
+            }
+        };
+
+        FishCatch::query()
+            ->whereNotNull('latitude')
+            ->whereNotNull('longitude')
+            ->latest()
+            ->limit(400)
+            ->get(['user_id', 'latitude', 'longitude'])
+            ->each(fn ($row) => $collect($row->user_id, $row->latitude, $row->longitude));
+
+        FishingSpot::query()
+            ->latest()
+            ->limit(400)
+            ->get(['user_id', 'latitude', 'longitude'])
+            ->each(fn ($row) => $collect($row->user_id, $row->latitude, $row->longitude));
+
+        $users = User::whereIn('id', array_keys($pinMap))
+            ->withCount(['followers', 'catches'])
+            ->get()
+            ->keyBy('id');
+
+        $anglers = collect($pinMap)
+            ->map(function ($pin) use ($users, $viewerId) {
+                $user = $users->get($pin['user_id']);
+                if (! $user) {
+                    return null;
+                }
+
+                return array_merge(AnglerRanker::format($user, $viewerId), [
+                    'latitude' => $pin['latitude'],
+                    'longitude' => $pin['longitude'],
+                    'distance_km' => $pin['distance_km'],
+                ]);
+            })
+            ->filter()
+            ->sortBy('distance_km')
+            ->values();
+
+        return response()->json([
+            'center' => ['latitude' => $lat, 'longitude' => $lon],
+            'radius_km' => $radius,
+            'anglers' => $anglers,
         ]);
     }
 

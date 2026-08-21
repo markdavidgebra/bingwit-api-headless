@@ -104,6 +104,8 @@ class CatchController extends Controller
             'media_files.*'  => 'file|mimes:jpg,jpeg,png|max:51200',
             'media_type'        => 'nullable|in:photo,video',
             'tournament_day_id' => 'nullable|integer|exists:tournament_days,id',
+            'product_ids'       => 'nullable|array|max:10',
+            'product_ids.*'     => 'integer|exists:products,id',
         ]);
 
         $tournamentDayId = $this->tournamentRanking->resolveTournamentDayId(
@@ -126,6 +128,25 @@ class CatchController extends Controller
             'longitude'      => $request->longitude,
             'media_type'     => $request->media_type ?? 'photo',
         ]);
+
+        $productIds = collect($request->input('product_ids', []))
+            ->map(fn ($id) => (int) $id)
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        if (! empty($productIds)) {
+            try {
+                $catch->taggedProducts()->syncWithoutDetaching($productIds);
+            } catch (\Throwable $e) {
+                Log::warning('Catch product tagging failed', [
+                    'catch_id' => $catch->id,
+                    'product_ids' => $productIds,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+        }
 
         $uploadDebug = [
             'has_media_files' => $request->hasFile('media_files'),
@@ -184,7 +205,25 @@ class CatchController extends Controller
 
         // Reload with relations the frontend needs; media_url/media_urls
         // are auto-appended via FishCatch model accessors.
-        $catch->load(['user', 'media', 'tournamentDay.tournament']);
+        $loadRelations = ['user', 'media', 'tournamentDay.tournament'];
+        if (! empty($productIds)) {
+            $loadRelations = array_merge($loadRelations, [
+                'taggedProducts.primaryImage',
+                'taggedProducts.brand',
+                'taggedProducts.vendor',
+            ]);
+        }
+
+        try {
+            $catch->load($loadRelations);
+        } catch (\Throwable $e) {
+            Log::warning('Catch reload after store failed', [
+                'catch_id' => $catch->id,
+                'message' => $e->getMessage(),
+            ]);
+            $catch->load(['user', 'media']);
+        }
+
         CatchEconomyPresenter::enrichAll($catch, $request->user()->id);
 
         $response = [
@@ -206,7 +245,14 @@ class CatchController extends Controller
     // VIEW A SINGLE CATCH
     public function show(Request $request, $id)
     {
-        $catch = FishCatch::with(['user', 'comments.user', 'media'])
+        $catch = FishCatch::with([
+                              'user',
+                              'comments.user',
+                              'media',
+                              'taggedProducts.primaryImage',
+                              'taggedProducts.brand',
+                              'taggedProducts.vendor',
+                          ])
                           ->withReactionCounts()
                           ->findOrFail($id);
 
@@ -222,7 +268,13 @@ class CatchController extends Controller
     // VIEW ALL CATCHES BY A SPECIFIC USER
     public function userCatches(Request $request, $userId)
     {
-        $catches = FishCatch::with(['user', 'media'])
+        $catches = FishCatch::with([
+                                'user',
+                                'media',
+                                'taggedProducts.primaryImage',
+                                'taggedProducts.brand',
+                                'taggedProducts.vendor',
+                            ])
                             ->withReactionCounts()
                             ->where('user_id', $userId)
                             ->latest()

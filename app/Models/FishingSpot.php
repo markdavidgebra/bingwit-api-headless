@@ -8,6 +8,7 @@ class FishingSpot extends Model
 {
     protected $fillable = [
         'user_id',
+        'municipality_id',
         'name',
         'description',
         'latitude',

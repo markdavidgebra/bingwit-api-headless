@@ -219,6 +219,14 @@ class MarketplaceController extends Controller
             'product_id' => 'required|exists:products,id',
         ]);
 
+        $catch = \App\Models\FishCatch::findOrFail($request->catch_id);
+
+        if ($catch->user_id !== $request->user()->id) {
+            return response()->json([
+                'message' => 'You can only tag products on your own catches.',
+            ], 403);
+        }
+
         $tag = ProductTag::firstOrCreate([
             'catch_id'   => $request->catch_id,
             'product_id' => $request->product_id,
@@ -234,9 +242,17 @@ class MarketplaceController extends Controller
     public function removeTag(Request $request)
     {
         $request->validate([
-            'catch_id'   => 'required',
-            'product_id' => 'required',
+            'catch_id'   => 'required|exists:catches,id',
+            'product_id' => 'required|exists:products,id',
         ]);
+
+        $catch = \App\Models\FishCatch::findOrFail($request->catch_id);
+
+        if ($catch->user_id !== $request->user()->id) {
+            return response()->json([
+                'message' => 'You can only remove tags from your own catches.',
+            ], 403);
+        }
 
         ProductTag::where('catch_id',   $request->catch_id)
                   ->where('product_id', $request->product_id)

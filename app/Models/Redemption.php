@@ -10,6 +10,7 @@ class Redemption extends Model
         'user_id',
         'reward_item_id',
         'stars_spent',
+        'fish_points_spent',
         'status',
         'fulfilled_at',
     ];

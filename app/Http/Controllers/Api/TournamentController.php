@@ -172,8 +172,15 @@ class TournamentController extends Controller
     public function announcements()
     {
         $posts = TournamentPost::announcements()
+                                ->whereHas('tournament', function ($q) {
+                                    $q->whereIn('status', ['open', 'active'])
+                                      ->where(function ($inner) {
+                                          $inner->whereNull('ends_at')
+                                                ->orWhere('ends_at', '>=', now());
+                                      });
+                                })
                                 ->with([
-                                    'tournament:id,name,slug,cover_image,status',
+                                    'tournament:id,name,slug,cover_image,status,ends_at',
                                     'admin:id,name,profile_picture',
                                 ])
                                 ->latest()

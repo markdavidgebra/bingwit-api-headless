@@ -75,6 +75,17 @@ class FishCatch extends Model implements HasMedia
         return $this->hasMany(CatchStarGift::class, 'catch_id');
     }
 
+    /** Marketplace products tagged as tackle used on this catch. */
+    public function taggedProducts()
+    {
+        return $this->belongsToMany(
+            Product::class,
+            'product_tags',
+            'catch_id',
+            'product_id'
+        )->withTimestamps();
+    }
+
     public function registerMediaCollections(): void
     {
         $this->addMediaCollection('catch_media');

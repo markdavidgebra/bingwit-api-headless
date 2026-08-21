@@ -5,6 +5,11 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\Follow;
+use App\Models\FishingSpot;
+use App\Models\UserBlock;
+use App\Support\AnglerRanker;
+use App\Support\OptionalBearerUser;
+use App\Support\UserBlockGuard;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
@@ -23,14 +28,94 @@ class ProfileController extends Controller
     }
 
     // VIEW SOMEONE ELSE'S PROFILE
-    public function show($id)
+    public function show(Request $request, $id)
     {
-        $user = User::findOrFail($id);
+        $user = User::withCount(['followers', 'following', 'catches'])->findOrFail($id);
+        $viewerId = OptionalBearerUser::id($request);
+
+        $isFollowing = false;
+        $isBlockedByMe = false;
+        if ($viewerId) {
+            $isFollowing = Follow::where('follower_id', $viewerId)
+                ->where('following_id', $user->id)
+                ->exists();
+            $isBlockedByMe = UserBlock::where('blocker_id', $viewerId)
+                ->where('blocked_id', $user->id)
+                ->exists();
+        }
 
         return response()->json([
             'user' => $user,
-            'followers_count' => $user->followers()->count(),
-            'following_count' => $user->following()->count(),
+            'followers_count' => $user->followers_count,
+            'following_count' => $user->following_count,
+            'catches_count' => $user->catches_count,
+            'is_following' => $isFollowing,
+            'is_blocked_by_me' => $isBlockedByMe,
+            'blocked_either_way' => $viewerId
+                ? UserBlockGuard::isBlockedEitherWay((int) $viewerId, (int) $user->id)
+                : false,
+        ]);
+    }
+
+    /** Search engine for anglers (name, location, fishing style, pin places). */
+    public function searchAnglers(Request $request)
+    {
+        $request->validate([
+            'q' => 'nullable|string|max:100',
+            'location' => 'nullable|string|max:100',
+            'pin' => 'nullable|string|max:100',
+        ]);
+
+        $q = trim((string) $request->query('q', ''));
+        $location = trim((string) $request->query('location', ''));
+        $pin = trim((string) $request->query('pin', ''));
+
+        if ($q === '' && $location === '' && $pin === '') {
+            return response()->json([
+                'message' => 'Provide q, location, or pin to search.',
+                'anglers' => [],
+            ], 422);
+        }
+
+        $viewerId = $request->user()?->id;
+        $query = User::query();
+
+        if ($q !== '') {
+            $term = '%' . $q . '%';
+            $query->where(function ($builder) use ($term) {
+                $builder->where('name', 'like', $term)
+                    ->orWhere('location', 'like', $term)
+                    ->orWhere('fishing_style', 'like', $term)
+                    ->orWhere('bio', 'like', $term);
+            });
+        }
+
+        if ($location !== '') {
+            $query->where('location', 'like', '%' . $location . '%');
+        }
+
+        // Anglers who pinned fishing spots matching the place name.
+        if ($pin !== '') {
+            $userIds = FishingSpot::where('name', 'like', '%' . $pin . '%')
+                ->orWhere('description', 'like', '%' . $pin . '%')
+                ->pluck('user_id')
+                ->unique()
+                ->filter()
+                ->values();
+
+            $query->where(function ($builder) use ($userIds, $pin) {
+                $builder->whereIn('id', $userIds)
+                    ->orWhere('location', 'like', '%' . $pin . '%');
+            });
+        }
+
+        $hint = $location !== '' ? $location : ($pin !== '' ? $pin : $q);
+        AnglerRanker::applyRanking($query, $hint);
+
+        $anglers = $query->limit(40)->get();
+
+        return response()->json([
+            'anglers' => AnglerRanker::formatMany($anglers, $viewerId),
         ]);
     }
 
@@ -180,30 +265,21 @@ class ProfileController extends Controller
         return response()->json($following);
     }
 
-    // GET SUGGESTED ANGLERS (not following yet)
+    // GET SUGGESTED ANGLERS — ranked by followers + catches + location affinity
     public function suggestedAnglers(Request $request)
     {
-        $userId = $request->user()->id;
+        $user = $request->user();
+        $userId = $user->id;
 
-        $followingIds = $request->user()
-            ->following()
-            ->pluck('users.id');
-
+        $followingIds = $user->following()->pluck('users.id');
         $excludeIds = $followingIds->push($userId);
 
-        $anglers = User::whereNotIn('id', $excludeIds)
-            ->withCount('catches')
-            ->latest()
-            ->limit(10)
-            ->get([
-                'id',
-                'name',
-                'profile_picture',
-                'location',
-                'fishing_style',
-            ]);
+        $query = User::whereNotIn('id', $excludeIds);
+        AnglerRanker::applyRanking($query, $user->location);
 
-        return response()->json($anglers);
+        $anglers = $query->limit(20)->get();
+
+        return response()->json(AnglerRanker::formatMany($anglers, $userId));
     }
 
     // GET ALL USERS FOR ADMIN DROPDOWN

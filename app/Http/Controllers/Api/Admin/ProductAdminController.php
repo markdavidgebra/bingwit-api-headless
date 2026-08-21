@@ -118,28 +118,94 @@ class ProductAdminController extends Controller
     // GET ALL CATEGORIES
     public function categories()
     {
-        return response()->json(Category::all());
+        return response()->json(
+            Category::withCount('products')->orderBy('name')->get()
+        );
     }
 
     // CREATE CATEGORY
     public function createCategory(Request $request)
     {
         $request->validate([
-            'name' => 'required|string|max:255',
-            'icon' => 'nullable|string',
+            'name'        => 'required|string|max:255|unique:categories,name',
+            'icon'        => 'nullable|string|max:32',
+            'description' => 'nullable|string|max:1000',
+            'is_active'   => 'nullable|boolean',
         ]);
 
         $category = Category::create([
-            'name'      => $request->name,
-            'slug'      => Str::slug($request->name),
-            'icon'      => $request->icon,
-            'is_active' => true,
+            'name'        => $request->name,
+            'slug'        => $this->uniqueCategorySlug($request->name),
+            'icon'        => $request->icon,
+            'description' => $request->description,
+            'is_active'   => $request->boolean('is_active', true),
         ]);
 
         return response()->json([
             'message'  => 'Category created!',
-            'category' => $category,
+            'category' => $category->loadCount('products'),
         ], 201);
+    }
+
+    // UPDATE CATEGORY
+    public function updateCategory(Request $request, $id)
+    {
+        $category = Category::findOrFail($id);
+
+        $request->validate([
+            'name'        => 'sometimes|required|string|max:255|unique:categories,name,' . $category->id,
+            'icon'        => 'nullable|string|max:32',
+            'description' => 'nullable|string|max:1000',
+            'is_active'   => 'nullable|boolean',
+        ]);
+
+        $payload = $request->only(['name', 'icon', 'description']);
+        if ($request->has('is_active')) {
+            $payload['is_active'] = $request->boolean('is_active');
+        }
+        if ($request->filled('name') && $request->name !== $category->name) {
+            $payload['slug'] = $this->uniqueCategorySlug($request->name, $category->id);
+        }
+
+        $category->update($payload);
+
+        return response()->json([
+            'message'  => 'Category updated!',
+            'category' => $category->fresh()->loadCount('products'),
+        ]);
+    }
+
+    // DELETE CATEGORY
+    public function destroyCategory($id)
+    {
+        $category = Category::withCount('products')->findOrFail($id);
+
+        if ($category->products_count > 0) {
+            return response()->json([
+                'message' => "Cannot delete “{$category->name}” because {$category->products_count} product(s) still use it. Move or delete those products first.",
+            ], 409);
+        }
+
+        $category->delete();
+
+        return response()->json(['message' => 'Category deleted.']);
+    }
+
+    private function uniqueCategorySlug(string $name, ?int $ignoreId = null): string
+    {
+        $base = Str::slug($name) ?: 'category';
+        $slug = $base;
+        $i = 1;
+
+        while (
+            Category::where('slug', $slug)
+                ->when($ignoreId, fn ($query) => $query->where('id', '!=', $ignoreId))
+                ->exists()
+        ) {
+            $slug = $base . '-' . $i++;
+        }
+
+        return $slug;
     }
 
     // GET ALL BRANDS

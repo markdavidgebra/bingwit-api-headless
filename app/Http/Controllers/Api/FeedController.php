@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\FishCatch;
 use App\Support\CatchEconomyPresenter;
 use App\Support\OptionalBearerUser;
+use App\Support\UserBlockGuard;
 use Illuminate\Http\Request;
 
 class FeedController extends Controller
@@ -13,6 +14,8 @@ class FeedController extends Controller
     // GLOBAL FEED — all catches, newest first
     public function global(Request $request)
     {
+        $excluded = UserBlockGuard::excludedUserIds(OptionalBearerUser::id($request));
+
         $catches = FishCatch::with([
                                 'user' => function ($q) {
                                     $q->select(
@@ -23,8 +26,12 @@ class FeedController extends Controller
                                     );
                                 },
                                 'media',
+                                'taggedProducts.primaryImage',
+                                'taggedProducts.brand',
+                                'taggedProducts.vendor',
                             ])
                             ->withReactionCounts()
+                            ->when($excluded->isNotEmpty(), fn ($q) => $q->whereNotIn('user_id', $excluded))
                             ->latest()
                             ->paginate(15);
 
@@ -43,6 +50,9 @@ class FeedController extends Controller
                                 ->following()
                                 ->pluck('users.id');
 
+        $excluded = UserBlockGuard::excludedUserIds($request->user()->id);
+        $followingIds = $followingIds->diff($excluded)->values();
+
         if ($followingIds->isEmpty()) {
             return response()->json([
                 'message' => 'You are not following anyone yet!',
@@ -60,6 +70,9 @@ class FeedController extends Controller
                                     );
                                 },
                                 'media',
+                                'taggedProducts.primaryImage',
+                                'taggedProducts.brand',
+                                'taggedProducts.vendor',
                             ])
                             ->withReactionCounts()
                             ->whereIn('user_id', $followingIds)
@@ -95,6 +108,9 @@ class FeedController extends Controller
                             );
                         },
                         'media',
+                        'taggedProducts.primaryImage',
+                        'taggedProducts.brand',
+                        'taggedProducts.vendor',
                     ])
                     ->withReactionCounts()
                     ->findOrFail($id);
@@ -131,6 +147,9 @@ class FeedController extends Controller
                                     );
                                 },
                                 'media',
+                                'taggedProducts.primaryImage',
+                                'taggedProducts.brand',
+                                'taggedProducts.vendor',
                             ])
                             ->withReactionCounts()
                             ->where('fish_species', 'like', "%{$keyword}%")

@@ -46,6 +46,11 @@ class Vendor extends Authenticatable
         return $this->hasMany(Product::class, 'vendor_id');
     }
 
+    public function gifts()
+    {
+        return $this->hasMany(MerchantGift::class);
+    }
+
     public function getTotalProductsAttribute()
     {
         return $this->products()->count();

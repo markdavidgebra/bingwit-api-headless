@@ -31,6 +31,12 @@ class Product extends Model
         'rating' => 'decimal:2',
     ];
 
+    protected $appends = [
+        'primary_image_url',
+        'is_on_sale',
+        'discount_percent',
+    ];
+
     // Category this product belongs to
     public function category()
     {
@@ -106,6 +112,11 @@ class Product extends Model
             (($this->original_price - $this->price) /
                 $this->original_price) * 100
         );
+    }
+
+    public function getDiscountPercentAttribute()
+    {
+        return $this->discount_percentage;
     }
     // Vendor that owns this product
     public function vendor()

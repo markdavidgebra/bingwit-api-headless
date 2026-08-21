@@ -13,6 +13,7 @@ class FishingBoat extends Model implements HasMedia
 
     protected $fillable = [
         'admin_id',
+        'municipality_id',
         'name',
         'slug',
         'description',

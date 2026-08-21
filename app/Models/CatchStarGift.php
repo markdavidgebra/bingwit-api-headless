@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class CatchStarGift extends Model
 {
-    protected $fillable = ['giver_id', 'catch_id', 'fish_points', 'message'];
+    protected $fillable = ['giver_id', 'catch_id', 'fish_points', 'stars', 'message'];
 
     public function giver()
     {
