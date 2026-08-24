@@ -74,11 +74,22 @@ class AuthController extends Controller
             'password' => 'required',
         ]);
 
-        $account = $this->resolveAccount(
-            $request->email,
-            $request->password,
-            [Vendor::class, Admin::class]
-        );
+        try {
+            $account = $this->resolveAccount(
+                $request->email,
+                $request->password,
+                [Vendor::class, Admin::class]
+            );
+        } catch (ValidationException $e) {
+            $user = User::where('email', $request->email)->first();
+            if ($user && Hash::check($request->password, $user->password)) {
+                throw ValidationException::withMessages([
+                    'email' => ['This account is not a vendor. Ask a Bingwit admin for vendor access.'],
+                ]);
+            }
+
+            throw $e;
+        }
 
         return $this->issueToken($account, 'bingwit-vendor-token');
     }
