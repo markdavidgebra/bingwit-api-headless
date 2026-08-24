@@ -95,7 +95,7 @@ class AuthController extends Controller
     }
 
     // ADMIN-SIDE LOGIN
-    // Only entries in the `admins` table may sign in here.
+    // Only admin-role entries in the `admins` table may sign in here.
     public function loginAdmin(Request $request)
     {
         $request->validate([
@@ -109,7 +109,52 @@ class AuthController extends Controller
             [Admin::class]
         );
 
+        if ($account->isDeveloper()) {
+            throw ValidationException::withMessages([
+                'email' => ['This is a developer account. Sign in at the developer portal.'],
+            ]);
+        }
+
         return $this->issueToken($account, 'bingwit-admin-token');
+    }
+
+    // DEVELOPER-SIDE LOGIN
+    // Only developer-role staff may sign in here.
+    public function loginDeveloper(Request $request)
+    {
+        $request->validate([
+            'email'    => 'required|email',
+            'password' => 'required',
+        ]);
+
+        try {
+            $account = $this->resolveAccount(
+                $request->email,
+                $request->password,
+                [Admin::class]
+            );
+        } catch (ValidationException $e) {
+            $user = User::where('email', $request->email)->first();
+            $vendor = Vendor::where('email', $request->email)->first();
+            $matched = ($user && Hash::check($request->password, $user->password))
+                || ($vendor && Hash::check($request->password, $vendor->password));
+
+            if ($matched) {
+                throw ValidationException::withMessages([
+                    'email' => ['This account is not a developer.'],
+                ]);
+            }
+
+            throw $e;
+        }
+
+        if (! $account->isDeveloper()) {
+            throw ValidationException::withMessages([
+                'email' => ['This account is not a developer. Use the admin console.'],
+            ]);
+        }
+
+        return $this->issueToken($account, 'bingwit-developer-token');
     }
 
     // LOGOUT (works for any authenticated entity)
@@ -163,6 +208,10 @@ class AuthController extends Controller
     {
         $token = $account->createToken($tokenName)->plainTextToken;
 
+        if ($account instanceof Admin) {
+            $account->withStaffPermissions();
+        }
+
         return response()->json([
             'message' => 'Logged in successfully!',
             'role'    => $this->roleFor($account),
@@ -174,7 +223,7 @@ class AuthController extends Controller
     protected function roleFor($account): string
     {
         return match (true) {
-            $account instanceof Admin  => 'admin',
+            $account instanceof Admin  => $account->isDeveloper() ? 'developer' : 'admin',
             $account instanceof Vendor => 'vendor',
             $account instanceof User   => 'user',
             default                    => 'unknown',

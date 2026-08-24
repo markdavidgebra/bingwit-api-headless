@@ -39,7 +39,7 @@ use App\Http\Controllers\Api\ResortController;
 use App\Http\Controllers\Api\Admin\ConnectAdminController;
 use App\Http\Controllers\Api\Admin\ReportAdminController;
 use App\Http\Controllers\Api\AccountDeletionRequestController;
-use App\Http\Controllers\Api\Admin\AccountDeletionAdminController;
+use App\Http\Controllers\Api\Admin\DeveloperStaffController;
 // ─── Public Routes ────────────────────────────────────────
 
 // ─── Diagnostics (Public, read-only) ──────────────────────
@@ -64,6 +64,7 @@ Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
 Route::post('/vendor/login', [AuthController::class, 'loginVendor']);
 Route::post('/admin/login', [AuthController::class, 'loginAdmin']);
+Route::post('/developer/login', [AuthController::class, 'loginDeveloper']);
 
 Route::post('/account-deletion-requests', [AccountDeletionRequestController::class, 'store'])
     ->middleware('throttle:5,1');
@@ -148,6 +149,15 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/me', [AdminProfileController::class, 'me']);
         Route::put('/profile', [AdminProfileController::class, 'update']);
         Route::post('/profile/photo', [AdminProfileController::class, 'uploadPhoto']);
+
+        Route::get('/staff', [DeveloperStaffController::class, 'index']);
+        Route::post('/staff', [DeveloperStaffController::class, 'store']);
+        Route::put('/staff/{id}', [DeveloperStaffController::class, 'update']);
+        Route::delete('/staff/{id}', [DeveloperStaffController::class, 'destroy']);
+        Route::get('/roles', [DeveloperStaffController::class, 'roles']);
+        Route::post('/roles', [DeveloperStaffController::class, 'storeRole']);
+        Route::put('/roles/{id}', [DeveloperStaffController::class, 'updateRole']);
+        Route::delete('/roles/{id}', [DeveloperStaffController::class, 'destroyRole']);
 
         // Vendor management
         Route::get('/users', [VendorAdminController::class, 'eligibleUsers']);

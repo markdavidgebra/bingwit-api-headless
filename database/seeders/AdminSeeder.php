@@ -15,7 +15,21 @@ class AdminSeeder extends Seeder
             [
                 'name'     => env('ADMIN_NAME', 'Administrator'),
                 'password' => Hash::make(env('ADMIN_PASSWORD', 'password')),
+                'role'     => 'admin',
             ]
         );
+
+        $developer = Admin::firstOrCreate(
+            ['email' => env('DEVELOPER_EMAIL', 'developer@bingwit.com')],
+            [
+                'name'     => env('DEVELOPER_NAME', 'Developer'),
+                'password' => Hash::make(env('DEVELOPER_PASSWORD', 'password')),
+                'role'     => 'developer',
+            ]
+        );
+
+        if ($developer->role !== 'developer') {
+            $developer->update(['role' => 'developer']);
+        }
     }
 }

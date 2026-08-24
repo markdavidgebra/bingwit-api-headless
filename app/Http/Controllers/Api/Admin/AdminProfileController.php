@@ -16,7 +16,7 @@ class AdminProfileController extends Controller
     public function me(Request $request)
     {
         return response()->json([
-            'account' => $request->user(),
+            'account' => $request->user()->withStaffPermissions(),
         ]);
     }
 
@@ -61,7 +61,7 @@ class AdminProfileController extends Controller
 
         return response()->json([
             'message' => 'Profile updated successfully!',
-            'account' => $admin->fresh(),
+            'account' => $admin->fresh()->withStaffPermissions(),
         ]);
     }
 
@@ -94,7 +94,7 @@ class AdminProfileController extends Controller
 
         return response()->json([
             'message' => 'Profile picture updated!',
-            'account' => $admin->fresh(),
+            'account' => $admin->fresh()->withStaffPermissions(),
         ]);
     }
 }

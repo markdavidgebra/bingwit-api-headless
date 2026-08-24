@@ -15,6 +15,7 @@ class Admin extends Authenticatable
         'name',
         'email',
         'password',
+        'role',
         'profile_picture',
     ];
 
@@ -46,5 +47,29 @@ class Admin extends Authenticatable
         }
 
         return asset('storage/' . $this->profile_picture);
+    }
+
+    public function isDeveloper(): bool
+    {
+        return $this->role === 'developer';
+    }
+
+    public function canUse(string $function): bool
+    {
+        if ($this->isDeveloper()) {
+            return true;
+        }
+
+        return in_array($function, StaffRole::permissionsFor($this->role ?: 'admin'), true);
+    }
+
+    public function withStaffPermissions(): static
+    {
+        $this->setAttribute(
+            'permissions',
+            StaffRole::permissionsFor($this->role ?: 'admin')
+        );
+
+        return $this;
     }
 }
