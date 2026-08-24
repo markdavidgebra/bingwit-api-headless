@@ -10,6 +10,7 @@ use App\Models\UserBlock;
 use App\Support\AnglerRanker;
 use App\Support\OptionalBearerUser;
 use App\Support\UserBlockGuard;
+use App\Services\WalletService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
@@ -19,11 +20,19 @@ class ProfileController extends Controller
     public function me(Request $request)
     {
         $user = $request->user();
+        $code = $user->ensureReferralCode();
+        $user->refresh();
 
         return response()->json([
             'user' => $user,
             'followers_count' => $user->followers()->count(),
             'following_count' => $user->following()->count(),
+            'referral' => [
+                'code'      => $code,
+                'link'      => $user->referralLink(),
+                'signups'   => $user->referrals()->count(),
+                'bonus_fp'  => app(WalletService::class)->setting('fish_points_referral_bonus', '25'),
+            ],
         ]);
     }
 
@@ -45,7 +54,7 @@ class ProfileController extends Controller
         }
 
         return response()->json([
-            'user' => $user,
+            'user' => $user->makeHidden(['referral_code']),
             'followers_count' => $user->followers_count,
             'following_count' => $user->following_count,
             'catches_count' => $user->catches_count,

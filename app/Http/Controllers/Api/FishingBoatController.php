@@ -159,42 +159,41 @@ class FishingBoatController extends Controller
             'status'           => 'pending',
         ]);
 
-        // Commercial Stars reward for boat booking (requirement c).
-        $starsBonus = $this->wallet->setting('stars_boat_booking', '5');
+        $fpBonus = $this->wallet->setting('stars_boat_booking', '5');
         $alreadyRewarded = WalletTransaction::where('user_id', $request->user()->id)
             ->where('type', 'commercial_boat_booking')
             ->where('reference_type', 'boat_booking')
             ->where('reference_id', $booking->id)
             ->exists();
 
-        $starsGranted = 0;
-        if ($starsBonus > 0 && ! $alreadyRewarded) {
-            $this->wallet->creditStars(
+        $fpGranted = 0;
+        if ($fpBonus > 0 && ! $alreadyRewarded) {
+            $this->wallet->creditFishPoints(
                 $request->user(),
-                $starsBonus,
+                $fpBonus,
                 'commercial_boat_booking',
                 'boat_booking',
                 (int) $booking->id,
-                'Stars from boat booking'
+                'Fish Points from boat booking'
             );
-            $starsGranted = $starsBonus;
+            $fpGranted = $fpBonus;
 
             Notification::create([
                 'user_id'        => $request->user()->id,
-                'type'           => 'star_gift',
-                'title'          => "You earned {$starsBonus} Stars!",
-                'body'           => 'Thanks for booking a fishing boat. Exchange Stars for Fish Points in your wallet.',
+                'type'           => 'fish_points_gift',
+                'title'          => "You earned {$fpBonus} Fish Points!",
+                'body'           => 'Thanks for booking a fishing boat. Convert Fish Points to Stars in Rewards to claim items.',
                 'reference_id'   => $booking->id,
                 'reference_type' => 'boat_booking',
             ]);
         }
 
         return response()->json([
-            'message' => $starsGranted > 0
-                ? "Your fishing boat trip has been booked! +{$starsGranted} Stars earned."
+            'message' => $fpGranted > 0
+                ? "Your fishing boat trip has been booked! +{$fpGranted} Fish Points earned."
                 : 'Your fishing boat trip has been booked!',
             'booking' => $booking->load('boat'),
-            'stars_earned' => $starsGranted,
+            'fish_points_earned' => $fpGranted,
         ], 201);
     }
 

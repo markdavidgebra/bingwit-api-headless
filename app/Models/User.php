@@ -25,11 +25,14 @@ class User extends Authenticatable implements HasMedia
         'stars',
         'social_provider',
         'social_id',
+        'referral_code',
+        'referred_by_user_id',
     ];
 
     protected $hidden = [
         'password',
         'remember_token',
+        'referred_by_user_id',
     ];
 
     protected function casts(): array
@@ -38,6 +41,62 @@ class User extends Authenticatable implements HasMedia
             'email_verified_at' => 'datetime',
             'password'          => 'hashed',
         ];
+    }
+
+    protected static function booted(): void
+    {
+        static::creating(function (User $user) {
+            if (empty($user->referral_code)) {
+                $user->referral_code = static::makeReferralCode();
+            }
+        });
+    }
+
+    public static function makeReferralCode(): string
+    {
+        $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+        $length = strlen($alphabet) - 1;
+
+        for ($attempt = 0; $attempt < 24; $attempt++) {
+            $code = '';
+            for ($i = 0; $i < 8; $i++) {
+                $code .= $alphabet[random_int(0, $length)];
+            }
+            if (! static::where('referral_code', $code)->exists()) {
+                return $code;
+            }
+        }
+
+        return strtoupper(substr(bin2hex(random_bytes(5)), 0, 8));
+    }
+
+    public function ensureReferralCode(): string
+    {
+        if (! empty($this->referral_code)) {
+            return $this->referral_code;
+        }
+
+        $this->referral_code = static::makeReferralCode();
+        $this->save();
+
+        return $this->referral_code;
+    }
+
+    public function referralLink(): string
+    {
+        $base = rtrim((string) config('app.web_url', 'https://app.bingwit.com'), '/');
+
+        return $base . '/join?ref=' . $this->ensureReferralCode();
+    }
+
+    public function referrer()
+    {
+        return $this->belongsTo(User::class, 'referred_by_user_id');
+    }
+
+    public function referrals()
+    {
+        return $this->hasMany(User::class, 'referred_by_user_id');
     }
 
     public function catches()

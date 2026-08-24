@@ -35,4 +35,16 @@ return [
         ],
     ],
 
+    'paymongo' => [
+        'secret_key' => env('PAYMONGO_SECRET_KEY'),
+        'public_key' => env('PAYMONGO_PUBLIC_KEY'),
+        'webhook_secret' => env('PAYMONGO_WEBHOOK_SECRET'),
+        'success_url' => env('PAYMONGO_SUCCESS_URL'),
+        'cancel_url' => env('PAYMONGO_CANCEL_URL'),
+        'payment_methods' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', env('PAYMONGO_PAYMENT_METHODS', 'card,gcash,grab_pay,paymaya,qrph'))
+        ))),
+    ],
+
 ];

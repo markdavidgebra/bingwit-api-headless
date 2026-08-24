@@ -68,8 +68,13 @@ class Tournament extends Model implements HasMedia
         }
         return $this->participants()
                     ->where('user_id', $userId)
-                    ->whereIn('status', ['registered', 'confirmed'])
+                    ->active()
                     ->exists();
+    }
+
+    public function occupyingCount(): int
+    {
+        return $this->participants()->occupying()->count();
     }
 
     public function getCoverUrlAttribute(): ?string

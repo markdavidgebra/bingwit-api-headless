@@ -18,17 +18,15 @@ class RewardController extends Controller
 
     public function index()
     {
-        $rate = $this->wallet->setting('fish_points_per_star', '10');
-
         $items = RewardItem::where('is_active', true)
             ->where('stock', '>', 0)
-            ->orderByRaw('COALESCE(fish_points_cost, star_cost) asc')
+            ->orderByRaw('COALESCE(star_cost, fish_points_cost) asc')
             ->get()
-            ->map(function (RewardItem $item) use ($rate) {
-                $fpCost = (int) ($item->fish_points_cost ?: max(1, ((int) $item->star_cost) * max(1, $rate)));
+            ->map(function (RewardItem $item) {
+                $starCost = $this->wallet->starCostForReward($item);
                 $data = $item->toArray();
-                $data['fish_points_cost'] = $fpCost;
-                $data['star_cost'] = (int) $item->star_cost;
+                $data['star_cost'] = $starCost;
+                $data['fish_points_cost'] = $item->fish_points_cost;
 
                 return $data;
             });
@@ -36,28 +34,27 @@ class RewardController extends Controller
         return response()->json(['rewards' => $items]);
     }
 
-    /** Redeem tackle-shop reward items with Fish Points. */
+    /** Redeem tackle-shop reward items with Stars. */
     public function redeem(Request $request, $id)
     {
         $item = RewardItem::where('is_active', true)->findOrFail($id);
-        $rate = $this->wallet->setting('fish_points_per_star', '10');
-        $fpCost = (int) ($item->fish_points_cost ?: max(1, ((int) $item->star_cost) * max(1, $rate)));
+        $starCost = $this->wallet->starCostForReward($item);
 
         if ($item->stock < 1) {
             return response()->json(['message' => 'This reward is out of stock.'], 422);
         }
 
         try {
-            DB::transaction(function () use ($request, $item, $fpCost) {
+            DB::transaction(function () use ($request, $item, $starCost) {
                 $locked = RewardItem::where('id', $item->id)->lockForUpdate()->first();
 
                 if ($locked->stock < 1) {
                     throw new \RuntimeException('This reward is out of stock.');
                 }
 
-                $this->wallet->spendFishPoints(
+                $this->wallet->spendStars(
                     $request->user(),
-                    $fpCost,
+                    $starCost,
                     'redemption',
                     'reward_item',
                     (int) $locked->id,
@@ -69,8 +66,8 @@ class RewardController extends Controller
                 Redemption::create([
                     'user_id'           => $request->user()->id,
                     'reward_item_id'    => $locked->id,
-                    'stars_spent'       => 0,
-                    'fish_points_spent' => $fpCost,
+                    'stars_spent'       => $starCost,
+                    'fish_points_spent' => 0,
                     'status'            => 'pending',
                 ]);
             });
@@ -82,15 +79,15 @@ class RewardController extends Controller
             'user_id'        => $request->user()->id,
             'type'           => 'redemption',
             'title'          => 'Redemption submitted!',
-            'body'           => 'You redeemed: ' . $item->name . " for {$fpCost} Fish Points.",
+            'body'           => 'You redeemed: ' . $item->name . " for {$starCost} Stars.",
             'reference_id'   => $item->id,
             'reference_type' => 'reward_item',
         ]);
 
         return response()->json([
-            'message'          => 'Reward redeemed! We will process your tackle item soon.',
-            'your_fish_points' => $request->user()->fresh()->fish_points,
-            'fish_points_spent'=> $fpCost,
+            'message'     => 'Reward claimed with Stars! We will process your tackle item soon.',
+            'your_stars'  => $request->user()->fresh()->stars,
+            'stars_spent' => $starCost,
         ], 201);
     }
 

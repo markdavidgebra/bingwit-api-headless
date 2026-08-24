@@ -8,6 +8,8 @@ use App\Models\EconomySetting;
 use App\Models\GearDonation;
 use App\Models\MerchantGift;
 use App\Models\MerchantGiftCatalog;
+use App\Models\ProductClaim;
+use App\Models\ProductOrder;
 use App\Models\Redemption;
 use App\Models\RewardItem;
 use App\Models\User;
@@ -34,6 +36,9 @@ class EconomyAdminController extends Controller
                 'merchant_gifts'       => MerchantGift::count(),
                 'merchant_gifts_fp'    => (int) MerchantGift::sum('fish_points_spent'),
                 'pending_redemptions'  => Redemption::where('status', 'pending')->count(),
+                'referred_signups'     => User::whereNotNull('referred_by_user_id')->count(),
+                'users_who_referred'   => User::has('referrals')->count(),
+                'referral_fp_awarded'  => (int) WalletTransaction::where('type', 'referral_signup')->sum('fish_points_delta'),
             ],
             'recent_transactions' => WalletTransaction::with('user:id,name,email')
                 ->latest()
@@ -58,6 +63,89 @@ class EconomyAdminController extends Controller
         }
 
         return response()->json($query->paginate(25));
+    }
+
+    public function referrals(Request $request)
+    {
+        $signups = User::query()
+            ->whereNotNull('referred_by_user_id')
+            ->with(['referrer:id,name,email,referral_code'])
+            ->latest();
+
+        if ($request->filled('referrer_id')) {
+            $signups->where('referred_by_user_id', (int) $request->referrer_id);
+        }
+
+        if ($request->filled('search')) {
+            $term = '%' . $request->search . '%';
+            $signups->where(function ($q) use ($term) {
+                $q->where('name', 'like', $term)
+                    ->orWhere('email', 'like', $term)
+                    ->orWhereHas('referrer', function ($r) use ($term) {
+                        $r->where('name', 'like', $term)
+                            ->orWhere('email', 'like', $term)
+                            ->orWhere('referral_code', 'like', $term);
+                    });
+            });
+        }
+
+        $page = $signups->paginate(25);
+        $ids = collect($page->items())->pluck('id');
+        $awards = WalletTransaction::where('type', 'referral_signup')
+            ->where('reference_type', 'user')
+            ->whereIn('reference_id', $ids)
+            ->get()
+            ->keyBy('reference_id');
+
+        $page->getCollection()->transform(function (User $user) use ($awards) {
+            $tx = $awards->get($user->id);
+            $owner = $user->referrer;
+            $code = $owner?->referral_code;
+            $user->setAttribute('fp_awarded', (int) ($tx->fish_points_delta ?? 0));
+            $user->setAttribute('link_owner', $owner ? [
+                'id'             => $owner->id,
+                'name'           => $owner->name,
+                'email'          => $owner->email,
+                'referral_code'  => $code,
+                'referral_link'  => $code
+                    ? rtrim((string) config('app.web_url', 'https://app.bingwit.com'), '/') . '/join?ref=' . $code
+                    : null,
+            ] : null);
+            $user->makeVisible(['referred_by_user_id']);
+
+            return $user;
+        });
+
+        $topReferrers = User::query()
+            ->withCount('referrals')
+            ->whereHas('referrals')
+            ->orderByDesc('referrals_count')
+            ->limit(20)
+            ->get(['id', 'name', 'email', 'referral_code', 'fish_points']);
+
+        $referrerIds = $topReferrers->pluck('id');
+        $fpByUser = WalletTransaction::query()
+            ->selectRaw('user_id, SUM(fish_points_delta) as fp')
+            ->where('type', 'referral_signup')
+            ->whereIn('user_id', $referrerIds)
+            ->groupBy('user_id')
+            ->pluck('fp', 'user_id');
+
+        $topReferrers->transform(function (User $user) use ($fpByUser) {
+            $user->setAttribute('referral_fp_earned', (int) ($fpByUser[$user->id] ?? 0));
+
+            return $user;
+        });
+
+        return response()->json([
+            'signups' => $page,
+            'top_referrers' => $topReferrers,
+            'stats' => [
+                'referred_signups'    => User::whereNotNull('referred_by_user_id')->count(),
+                'users_who_referred'  => User::has('referrals')->count(),
+                'referral_fp_awarded' => (int) WalletTransaction::where('type', 'referral_signup')->sum('fish_points_delta'),
+            ],
+        ]);
     }
 
     public function adjustWallet(Request $request, $userId, WalletService $wallet)
@@ -223,7 +311,7 @@ class EconomyAdminController extends Controller
 
         if (empty($data['fish_points_cost']) && empty($data['star_cost'])) {
             return response()->json([
-                'message' => 'Provide fish_points_cost (preferred) or star_cost.',
+                'message' => 'Provide star_cost so anglers can claim this item with Stars.',
             ], 422);
         }
 
@@ -343,5 +431,67 @@ class EconomyAdminController extends Controller
         ]);
 
         return response()->json(['message' => 'Redemption marked fulfilled.', 'redemption' => $row]);
+    }
+
+    public function productClaims()
+    {
+        $rows = ProductClaim::with(['user:id,name,email', 'product:id,name'])
+            ->latest()
+            ->paginate(20);
+
+        return response()->json($rows);
+    }
+
+    public function fulfillProductClaim($id)
+    {
+        $row = ProductClaim::findOrFail($id);
+        $row->update([
+            'status'       => 'fulfilled',
+            'fulfilled_at' => now(),
+        ]);
+
+        return response()->json(['message' => 'Claim marked fulfilled.', 'claim' => $row]);
+    }
+
+    public function productOrders()
+    {
+        $rows = ProductOrder::with(['user:id,name,email', 'product:id,name'])
+            ->latest()
+            ->paginate(20);
+
+        return response()->json($rows);
+    }
+
+    public function fulfillProductOrder($id)
+    {
+        $row = ProductOrder::with('product')->findOrFail($id);
+        if (! $row->canUpdateShipping() && ! in_array($row->resolvedShippingStatus(), ['delivered', 'picked_up'], true)) {
+            return response()->json(['message' => 'Only paid or COD orders can be fulfilled.'], 422);
+        }
+
+        $target = $row->fulfillment === 'pickup' ? 'picked_up' : 'delivered';
+        $row->setShippingStatus($target);
+
+        return response()->json(['message' => 'Order marked fulfilled.', 'order' => $row->fresh()]);
+    }
+
+    public function updateProductOrderShipping(Request $request, $id)
+    {
+        $data = $request->validate([
+            'shipping_status' => 'required|string|in:processing,packed,out_for_delivery,delivered,ready_for_pickup,picked_up',
+        ]);
+
+        $row = ProductOrder::with('product')->findOrFail($id);
+
+        try {
+            $row->setShippingStatus($data['shipping_status']);
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'message' => 'Order status updated.',
+            'order' => $row->fresh(),
+        ]);
     }
 }

@@ -16,6 +16,24 @@ class WalletService
         return (int) ($row?->value ?? $default);
     }
 
+    /** Claim cost in Stars. Prefer star_cost; fall back from leftover Fish Points. */
+    public function starCostForReward(\App\Models\RewardItem $item): int
+    {
+        $starCost = (int) $item->star_cost;
+        if ($starCost > 0) {
+            return $starCost;
+        }
+
+        $fishPoints = (int) $item->fish_points_cost;
+        if ($fishPoints < 1) {
+            return 1;
+        }
+
+        $rate = max(1, $this->setting('fish_points_per_star', '10'));
+
+        return max(1, (int) ceil($fishPoints / $rate));
+    }
+
     public function creditFishPoints(
         User $user,
         int $amount,

@@ -60,8 +60,11 @@ class TournamentRankingService
                 'user_id'       => $userId,
             ],
             [
-                'status'        => $status,
-                'registered_at' => now(),
+                'status'          => $status,
+                'registered_at'   => now(),
+                'payment_status'  => 'free',
+                'payment_method'  => 'complimentary',
+                'paid_at'         => now(),
             ]
         );
 
@@ -74,6 +77,10 @@ class TournamentRankingService
             $participant->update(['status' => 'confirmed']);
         }
 
+        if (! $participant->fresh()->isSettled()) {
+            $participant->markFree();
+        }
+
         return $participant->fresh();
     }
 
@@ -84,7 +91,7 @@ class TournamentRankingService
 
         $allowed = TournamentParticipant::where('tournament_id', $tournament->id)
             ->whereIn('user_id', $userIds)
-            ->whereIn('status', ['registered', 'confirmed'])
+            ->active()
             ->get()
             ->keyBy('user_id');
 

@@ -22,6 +22,10 @@ class Vendor extends Authenticatable
         'store_banner',
         'contact_phone',
         'address',
+        'city',
+        'province',
+        'island_group',
+        'local_area',
         'is_active',
         'is_verified',
     ];
@@ -49,6 +53,11 @@ class Vendor extends Authenticatable
     public function gifts()
     {
         return $this->hasMany(MerchantGift::class);
+    }
+
+    public function deliveryRate()
+    {
+        return $this->hasOne(VendorDeliveryRate::class);
     }
 
     public function getTotalProductsAttribute()

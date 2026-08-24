@@ -7,15 +7,23 @@ use App\Models\Admin;
 use App\Models\Brand;
 use App\Models\Category;
 use App\Models\MerchantGift;
+use App\Models\Notification;
 use App\Models\Product;
 use App\Models\ProductImage;
+use App\Models\ProductOrder;
+use App\Models\User;
 use App\Models\Vendor;
+use App\Services\WalletService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class VendorController extends Controller
 {
+    public function __construct(private WalletService $wallet)
+    {
+    }
+
     /**
      * Resolve the vendor context for the current request.
      *
@@ -507,6 +515,86 @@ class VendorController extends Controller
         ]);
     }
 
+    /** Search anglers so the store can award Stars. */
+    public function searchAnglers(Request $request)
+    {
+        $request->validate([
+            'search' => 'required|string|min:2|max:80',
+        ]);
+
+        $term = trim((string) $request->query('search'));
+
+        $users = User::query()
+            ->where(function ($query) use ($term) {
+                $query->where('name', 'like', "%{$term}%")
+                    ->orWhere('email', 'like', "%{$term}%");
+            })
+            ->orderBy('name')
+            ->limit(20)
+            ->get(['id', 'name', 'email', 'fish_points', 'stars', 'profile_picture']);
+
+        return response()->json(['users' => $users]);
+    }
+
+    /** Store awards Fish Points to a customer. Anglers convert FP → Stars, then claim. */
+    public function grantStars(Request $request)
+    {
+        $vendor = $this->resolveVendor($request);
+
+        if (! $vendor) {
+            return response()->json([
+                'message' => 'You need a store context to give Fish Points.',
+            ], 403);
+        }
+
+        $data = $request->validate([
+            'user_id'     => 'required|exists:users,id',
+            'fish_points' => 'nullable|integer|min:1|max:10000',
+            'stars'       => 'nullable|integer|min:1|max:10000',
+            'note'        => 'nullable|string|max:500',
+        ]);
+
+        $points = (int) ($data['fish_points'] ?? $data['stars'] ?? 0);
+        if ($points < 1) {
+            return response()->json([
+                'message' => 'Enter how many Fish Points to give.',
+            ], 422);
+        }
+
+        $user = User::findOrFail($data['user_id']);
+        $note = $data['note'] ?: ('Fish Points from ' . ($vendor->store_name ?: $vendor->name));
+
+        $this->wallet->creditFishPoints(
+            $user,
+            $points,
+            'store_grant',
+            'vendor',
+            (int) $vendor->id,
+            $note
+        );
+
+        Notification::create([
+            'user_id'        => $user->id,
+            'type'           => 'fish_points_gift',
+            'title'          => 'Fish Points from a store',
+            'body'           => ($vendor->store_name ?: $vendor->name) . " gave you {$points} Fish Points.",
+            'reference_id'   => $vendor->id,
+            'reference_type' => 'vendor',
+        ]);
+
+        $fresh = $user->fresh();
+
+        return response()->json([
+            'message' => "Gave {$points} Fish Points to {$user->name}.",
+            'user'    => [
+                'id'          => $user->id,
+                'name'        => $user->name,
+                'fish_points' => $fresh->fish_points,
+                'stars'       => $fresh->stars,
+            ],
+        ]);
+    }
+
     // GET GIFTS SENT TO THIS STORE
     public function gifts(Request $request)
     {
@@ -528,6 +616,76 @@ class VendorController extends Controller
             ->paginate($perPage);
 
         return response()->json($gifts);
+    }
+
+    public function orders(Request $request)
+    {
+        $vendor = $this->resolveVendor($request);
+
+        if (! $vendor) {
+            return response()->json(['data' => []]);
+        }
+
+        $perPage = min(max((int) $request->query('per_page', 25), 1), 100);
+
+        $query = ProductOrder::query()
+            ->where('vendor_id', $vendor->id)
+            ->with([
+                'user:id,name',
+                'product:id,name',
+            ]);
+
+        $filter = (string) $request->query('filter', 'all');
+        if ($filter === 'delivery') {
+            $query->where('fulfillment', 'delivery');
+        } elseif ($filter === 'pickup') {
+            $query->where('fulfillment', 'pickup');
+        } elseif ($filter === 'done') {
+            $query->where(function ($q) {
+                $q->where('status', 'fulfilled')
+                    ->orWhereIn('shipping_status', ['delivered', 'picked_up']);
+            });
+        } elseif ($filter === 'active') {
+            $query->where(function ($q) {
+                $q->whereIn('status', ['pending', 'paid'])
+                    ->where(function ($inner) {
+                        $inner->whereNull('shipping_status')
+                            ->orWhereNotIn('shipping_status', ['delivered', 'picked_up']);
+                    });
+            });
+        }
+
+        $orders = $query->latest()->paginate($perPage);
+
+        return response()->json($orders);
+    }
+
+    public function updateOrderShipping(Request $request, $id)
+    {
+        $vendor = $this->resolveVendor($request);
+
+        if (! $vendor) {
+            return response()->json(['message' => 'Vendor context required.'], 403);
+        }
+
+        $data = $request->validate([
+            'shipping_status' => 'required|string|in:processing,packed,out_for_delivery,delivered,ready_for_pickup,picked_up',
+        ]);
+
+        $order = ProductOrder::with('product')
+            ->where('vendor_id', $vendor->id)
+            ->findOrFail($id);
+
+        try {
+            $order->setShippingStatus($data['shipping_status']);
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'message' => 'Order status updated.',
+            'order' => $order->fresh(),
+        ]);
     }
 
     /**

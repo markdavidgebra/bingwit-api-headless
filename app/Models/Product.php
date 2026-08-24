@@ -15,6 +15,8 @@ class Product extends Model
         'description',
         'price',
         'original_price',
+        'star_cost',
+        'is_points_only',
         'stock',
         'condition',
         'is_featured',
@@ -27,6 +29,7 @@ class Product extends Model
     protected $casts = [
         'is_featured' => 'boolean',
         'is_active' => 'boolean',
+        'is_points_only' => 'boolean',
         'price' => 'decimal:2',
         'rating' => 'decimal:2',
     ];
@@ -118,6 +121,11 @@ class Product extends Model
     {
         return $this->discount_percentage;
     }
+    public function isClaimableWithStars(): bool
+    {
+        return (int) $this->star_cost >= 1;
+    }
+
     // Vendor that owns this product
     public function vendor()
     {

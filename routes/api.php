@@ -11,6 +11,9 @@ use App\Http\Controllers\Api\MapController;
 use App\Http\Controllers\Api\LeaderboardController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\MarketplaceController;
+use App\Http\Controllers\Api\MarketplaceCheckoutController;
+use App\Http\Controllers\Api\CartController;
+use App\Http\Controllers\Api\Admin\DeliveryAdminController;
 use App\Http\Controllers\Api\WishlistController;
 use App\Http\Controllers\Api\ReviewController;
 use App\Http\Controllers\Api\Admin\ProductAdminController;
@@ -50,6 +53,8 @@ Route::get('/marketplace/search', [MarketplaceController::class, 'search']);
 Route::get('/marketplace/categories', [MarketplaceController::class, 'categories']);
 Route::get('/marketplace/categories/{id}', [MarketplaceController::class, 'byCategory']);
 Route::get('/marketplace/products/{id}/reviews', [ReviewController::class, 'index']);
+Route::get('/marketplace/checkout/return', [MarketplaceCheckoutController::class, 'returnPage']);
+Route::post('/marketplace/checkout/webhook', [MarketplaceCheckoutController::class, 'webhook']);
 
 Route::get('/rewards', [RewardController::class, 'index']);
 Route::get('/merchant-gifts/catalog', [MerchantGiftController::class, 'catalog']);
@@ -74,6 +79,7 @@ Route::get('/feed/announcements', [TournamentController::class, 'announcements']
 
 // ─── Tournaments (Public) ─────────────────────────────────
 Route::get('/tournaments', [TournamentController::class, 'index']);
+Route::get('/tournaments/checkout/return', [TournamentController::class, 'checkoutReturn']);
 Route::get('/tournaments/{id}/days/{dayId}/leaderboard', [TournamentController::class, 'dayLeaderboard']);
 Route::get('/tournaments/{id}/days', [TournamentController::class, 'days']);
 Route::get('/tournaments/{id}/posts', [TournamentController::class, 'posts']);
@@ -116,6 +122,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('vendor')->middleware('vendor')->group(function () {
         Route::get('/dashboard', [VendorController::class, 'dashboard']);
         Route::get('/gifts', [VendorController::class, 'gifts']);
+        Route::get('/orders', [VendorController::class, 'orders']);
+        Route::post('/orders/{id}/shipping', [VendorController::class, 'updateOrderShipping']);
+        Route::get('/anglers', [VendorController::class, 'searchAnglers']);
+        Route::post('/stars/grant', [VendorController::class, 'grantStars']);
         Route::get('/categories', [VendorController::class, 'categories']);
         Route::get('/brands', [VendorController::class, 'brands']);
         Route::get('/store', [VendorController::class, 'getStore']);
@@ -146,6 +156,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/vendors/assign', [VendorAdminController::class, 'assignVendor']);
         Route::delete('/vendors/{vendorId}/remove', [VendorAdminController::class, 'removeVendor']);
         Route::post('/vendors/{vendorId}/verify', [VendorAdminController::class, 'verifyStore']);
+        Route::get('/delivery', [DeliveryAdminController::class, 'show']);
+        Route::put('/delivery/defaults', [DeliveryAdminController::class, 'updateDefaults']);
+        Route::put('/vendors/{vendorId}/delivery', [DeliveryAdminController::class, 'updateVendor']);
 
         // Marketplace catalogue management
         Route::get('/products', [ProductAdminController::class, 'index']);
@@ -221,6 +234,7 @@ Route::middleware('auth:sanctum')->group(function () {
         // Economy management
         Route::get('/economy/overview', [EconomyAdminController::class, 'overview']);
         Route::get('/economy/wallets', [EconomyAdminController::class, 'wallets']);
+        Route::get('/economy/referrals', [EconomyAdminController::class, 'referrals']);
         Route::post('/economy/wallets/{userId}/adjust', [EconomyAdminController::class, 'adjustWallet']);
         Route::get('/economy/transactions', [EconomyAdminController::class, 'transactions']);
         Route::get('/economy/catch-gifts', [EconomyAdminController::class, 'catchGifts']);
@@ -238,11 +252,31 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/economy/gift-catalog/{id}', [EconomyAdminController::class, 'deleteGiftCatalog']);
         Route::get('/economy/redemptions', [EconomyAdminController::class, 'redemptions']);
         Route::post('/economy/redemptions/{id}/fulfill', [EconomyAdminController::class, 'fulfillRedemption']);
+        Route::get('/economy/product-claims', [EconomyAdminController::class, 'productClaims']);
+        Route::post('/economy/product-claims/{id}/fulfill', [EconomyAdminController::class, 'fulfillProductClaim']);
+        Route::get('/economy/product-orders', [EconomyAdminController::class, 'productOrders']);
+        Route::post('/economy/product-orders/{id}/fulfill', [EconomyAdminController::class, 'fulfillProductOrder']);
+        Route::post('/economy/product-orders/{id}/shipping', [EconomyAdminController::class, 'updateProductOrderShipping']);
     });
 
     // Marketplace (Protected)
     Route::post('/marketplace/tag', [MarketplaceController::class, 'tagProduct']);
     Route::delete('/marketplace/tag', [MarketplaceController::class, 'removeTag']);
+    Route::post('/marketplace/products/{id}/claim', [MarketplaceController::class, 'claim']);
+    Route::get('/marketplace/claims/mine', [MarketplaceController::class, 'myClaims']);
+    Route::get('/marketplace/products/{id}/fulfillment', [MarketplaceCheckoutController::class, 'options']);
+    Route::post('/marketplace/products/{id}/quote', [MarketplaceCheckoutController::class, 'quote']);
+    Route::post('/marketplace/products/{id}/checkout', [MarketplaceCheckoutController::class, 'checkout']);
+    Route::get('/marketplace/cart', [CartController::class, 'index']);
+    Route::post('/marketplace/cart', [CartController::class, 'store']);
+    Route::patch('/marketplace/cart/{productId}', [CartController::class, 'update']);
+    Route::delete('/marketplace/cart/{productId}', [CartController::class, 'destroy']);
+    Route::get('/marketplace/cart/fulfillment', [CartController::class, 'options']);
+    Route::post('/marketplace/cart/quote', [CartController::class, 'quote']);
+    Route::post('/marketplace/cart/checkout', [CartController::class, 'checkout']);
+    Route::get('/marketplace/orders/mine', [MarketplaceCheckoutController::class, 'mine']);
+    Route::get('/marketplace/orders/{id}', [MarketplaceCheckoutController::class, 'show']);
+    Route::post('/marketplace/orders/{id}/sync', [MarketplaceCheckoutController::class, 'sync']);
 
     // Wishlist
     Route::get('/wishlist', [WishlistController::class, 'index']);
@@ -285,6 +319,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // Tournaments (auth users register/withdraw)
     Route::get('/tournaments/my-active-days', [TournamentController::class, 'myActiveDays']);
     Route::post('/tournaments/{id}/register', [TournamentController::class, 'register']);
+    Route::post('/tournaments/{id}/register/sync', [TournamentController::class, 'syncRegister']);
     Route::delete('/tournaments/{id}/register', [TournamentController::class, 'unregister']);
 
     // Fishing boat bookings
@@ -304,7 +339,6 @@ Route::middleware('auth:sanctum')->group(function () {
     // Wallet & economy
     Route::get('/wallet', [WalletController::class, 'show']);
     Route::post('/wallet/convert', [WalletController::class, 'convert']);
-    Route::post('/wallet/afilink-bonus', [WalletController::class, 'claimAfilink']);
     Route::post('/catches/{id}/fish-points', [CatchEconomyController::class, 'giftFishPoints']);
     Route::post('/catches/{id}/stars', [CatchEconomyController::class, 'giftStars']);
     Route::post('/catches/{id}/confirm-lesson', [CatchEconomyController::class, 'confirmLesson']);

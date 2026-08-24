@@ -77,73 +77,14 @@ class CatchEconomyController extends Controller
         ]);
     }
 
-    /** Donate Stars from one angler to another on a catch (requirement a). */
+    /** Stars cannot be gifted. Older clients that post here are routed to Fish Points. */
     public function giftStars(Request $request, $catchId)
     {
-        // Older clients that still send fish_points on this route.
-        if ($request->has('fish_points') && ! $request->has('stars')) {
-            return $this->giftFishPoints($request, $catchId);
+        if (! $request->has('fish_points') && $request->has('stars')) {
+            $request->merge(['fish_points' => (int) $request->stars]);
         }
 
-        $request->validate([
-            'stars'   => 'required|integer|min:1|max:100',
-            'message' => 'nullable|string|max:500',
-        ]);
-
-        $catch = FishCatch::with('user')->findOrFail($catchId);
-        $giver = $request->user();
-        $stars = (int) $request->stars;
-
-        if ($catch->user_id === $giver->id) {
-            return response()->json(['message' => 'You cannot gift Stars to your own catch.'], 422);
-        }
-
-        try {
-            $this->wallet->transferStars(
-                $giver,
-                $catch->user,
-                $stars,
-                'catch_star_gift',
-                'catch',
-                (int) $catch->id,
-                'Stars gifted on catch'
-            );
-        } catch (\RuntimeException $e) {
-            return response()->json(['message' => $e->getMessage()], 422);
-        }
-
-        $comment = trim((string) $request->message);
-
-        CatchStarGift::create([
-            'giver_id'    => $giver->id,
-            'catch_id'    => $catch->id,
-            'fish_points' => 0,
-            'stars'       => $stars,
-            'message'     => $comment !== '' ? $comment : null,
-        ]);
-
-        if (\Illuminate\Support\Facades\Schema::hasColumn('catches', 'stars_received')) {
-            $catch->increment('stars_received', $stars);
-        }
-
-        $notifBody = $comment !== ''
-            ? $comment
-            : $giver->name . ' gifted you ' . $stars . ' Stars on your ' . $catch->fish_species . ' catch.';
-
-        Notification::create([
-            'user_id'        => $catch->user_id,
-            'type'           => 'star_gift',
-            'title'          => $giver->name . ' gave you ' . $stars . ' Stars!',
-            'body'           => $notifBody,
-            'reference_id'   => $catch->id,
-            'reference_type' => 'catch',
-        ]);
-
-        return response()->json([
-            'message'         => 'Stars sent!',
-            'stars_received'  => $catch->fresh()->stars_received ?? $stars,
-            'your_stars'      => $giver->fresh()->stars,
-        ]);
+        return $this->giftFishPoints($request, $catchId);
     }
 
     public function confirmLesson(Request $request, $catchId)

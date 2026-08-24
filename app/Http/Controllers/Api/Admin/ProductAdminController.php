@@ -26,13 +26,17 @@ class ProductAdminController extends Controller
     // CREATE PRODUCT
     public function store(Request $request)
     {
+        $starCost = $request->filled('star_cost') ? (int) $request->star_cost : null;
+        $starsOnly = $starCost !== null && $starCost >= 1;
+
         $request->validate([
             'name'           => 'required|string|max:255',
             'category_id'    => 'required|exists:categories,id',
             'brand_id'       => 'nullable|exists:brands,id',
             'description'    => 'nullable|string',
-            'price'          => 'required|numeric|min:0',
+            'price'          => $starsOnly ? 'nullable|numeric|min:0' : 'required|numeric|min:0',
             'original_price' => 'nullable|numeric|min:0',
+            'star_cost'      => 'nullable|integer|min:1',
             'stock'          => 'required|integer|min:0',
             'condition'      => 'nullable|in:new,used',
             'is_featured'    => 'nullable|boolean',
@@ -44,8 +48,10 @@ class ProductAdminController extends Controller
             'category_id'    => $request->category_id,
             'brand_id'       => $request->brand_id,
             'description'    => $request->description,
-            'price'          => $request->price,
-            'original_price' => $request->original_price,
+            'price'          => $starsOnly ? 0 : $request->price,
+            'original_price' => $starsOnly ? null : $request->original_price,
+            'star_cost'      => $starsOnly ? $starCost : null,
+            'is_points_only' => $starsOnly,
             'stock'          => $request->stock,
             'condition'      => $request->condition ?? 'new',
             'is_featured'    => $request->is_featured ?? false,
@@ -76,23 +82,45 @@ class ProductAdminController extends Controller
     {
         $product = Product::findOrFail($id);
 
+        $starCost = $request->exists('star_cost')
+            ? ($request->filled('star_cost') ? (int) $request->star_cost : null)
+            : ($product->star_cost !== null ? (int) $product->star_cost : null);
+        $starsOnly = $starCost !== null && $starCost >= 1;
+
         $request->validate([
             'name'           => 'sometimes|string|max:255',
             'category_id'    => 'sometimes|exists:categories,id',
             'brand_id'       => 'nullable|exists:brands,id',
             'description'    => 'nullable|string',
-            'price'          => 'sometimes|numeric|min:0',
+            'price'          => $starsOnly ? 'nullable|numeric|min:0' : 'sometimes|numeric|min:0',
             'original_price' => 'nullable|numeric|min:0',
+            'star_cost'      => 'nullable|integer|min:1',
             'stock'          => 'sometimes|integer|min:0',
             'is_featured'    => 'nullable|boolean',
             'is_active'      => 'nullable|boolean',
         ]);
 
-        $product->update($request->only([
+        $payload = $request->only([
             'name', 'category_id', 'brand_id',
-            'description', 'price', 'original_price',
+            'description',
             'stock', 'condition', 'is_featured', 'is_active',
-        ]));
+        ]);
+
+        $payload['star_cost'] = $starsOnly ? $starCost : null;
+        $payload['is_points_only'] = $starsOnly;
+        if ($starsOnly) {
+            $payload['price'] = 0;
+            $payload['original_price'] = null;
+        } else {
+            if ($request->exists('price')) {
+                $payload['price'] = $request->price;
+            }
+            if ($request->exists('original_price')) {
+                $payload['original_price'] = $request->original_price;
+            }
+        }
+
+        $product->update($payload);
 
         return response()->json([
             'message' => 'Product updated!',

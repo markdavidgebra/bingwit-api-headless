@@ -62,6 +62,7 @@ class UserAdminController extends Controller
         ])
             ->where('user_id', $id)
             ->whereIn('status', ['registered', 'confirmed'])
+            ->whereIn('payment_status', ['paid', 'free'])
             ->latest('registered_at')
             ->get();
 
@@ -90,7 +91,7 @@ class UserAdminController extends Controller
 
         $alreadyJoined = TournamentParticipant::where('tournament_id', $tournament->id)
             ->where('user_id', $user->id)
-            ->whereIn('status', ['registered', 'confirmed'])
+            ->active()
             ->exists();
 
         $participant = $this->ranking->addTournamentParticipant(

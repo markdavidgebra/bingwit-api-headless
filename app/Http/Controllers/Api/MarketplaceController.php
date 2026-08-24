@@ -6,11 +6,19 @@ use App\Http\Controllers\Controller;
 use App\Models\Product;
 use App\Models\Category;
 use App\Models\Brand;
+use App\Models\Notification;
+use App\Models\ProductClaim;
 use App\Models\ProductTag;
+use App\Services\WalletService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class MarketplaceController extends Controller
 {
+    public function __construct(private WalletService $wallet)
+    {
+    }
+
     // GET MARKETPLACE HOME DATA
     public function home()
     {
@@ -211,6 +219,82 @@ class MarketplaceController extends Controller
         ]);
     }
 
+    /** Claim a marketplace product with Stars (cost set by admin). */
+    public function claim(Request $request, $id)
+    {
+        $product = Product::where('is_active', true)->findOrFail($id);
+
+        $starCost = (int) $product->star_cost;
+        if ($starCost < 1) {
+            return response()->json([
+                'message' => 'This item does not have a Star cost yet. An admin must assign one.',
+            ], 422);
+        }
+
+        if ((int) $product->stock < 1) {
+            return response()->json(['message' => 'This item is out of stock.'], 422);
+        }
+
+        try {
+            DB::transaction(function () use ($request, $product) {
+                $locked = Product::where('id', $product->id)->lockForUpdate()->first();
+
+                if ((int) $locked->stock < 1) {
+                    throw new \RuntimeException('This item is out of stock.');
+                }
+
+                if ((int) $locked->star_cost < 1) {
+                    throw new \RuntimeException('This item does not have a Star cost yet.');
+                }
+
+                $this->wallet->spendStars(
+                    $request->user(),
+                    (int) $locked->star_cost,
+                    'product_claim',
+                    'product',
+                    (int) $locked->id,
+                    'Claimed: ' . $locked->name
+                );
+
+                $locked->decrement('stock');
+
+                ProductClaim::create([
+                    'user_id'     => $request->user()->id,
+                    'product_id'  => $locked->id,
+                    'stars_spent' => (int) $locked->star_cost,
+                    'status'      => 'pending',
+                ]);
+            });
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        Notification::create([
+            'user_id'        => $request->user()->id,
+            'type'           => 'redemption',
+            'title'          => 'Claim submitted!',
+            'body'           => 'You claimed ' . $product->name . " for {$starCost} Stars.",
+            'reference_id'   => $product->id,
+            'reference_type' => 'product',
+        ]);
+
+        return response()->json([
+            'message'     => 'Claimed with Stars! The store will process your item.',
+            'your_stars'  => $request->user()->fresh()->stars,
+            'stars_spent' => $starCost,
+        ], 201);
+    }
+
+    public function myClaims(Request $request)
+    {
+        $rows = ProductClaim::with('product.primaryImage')
+            ->where('user_id', $request->user()->id)
+            ->latest()
+            ->get();
+
+        return response()->json(['claims' => $rows]);
+    }
+
     // TAG PRODUCT IN CATCH POST
     public function tagProduct(Request $request)
     {
@@ -268,6 +352,14 @@ class MarketplaceController extends Controller
         $data['primary_image_url'] = $product->primary_image_url;
         $data['is_on_sale']        = $product->is_on_sale;
         $data['discount_percent']  = $product->discount_percentage;
+        $data['star_cost']         = $product->star_cost !== null ? (int) $product->star_cost : null;
+        $data['is_points_only']    = $product->isClaimableWithStars();
+        if ($data['is_points_only']) {
+            $data['price'] = 0;
+            $data['original_price'] = null;
+            $data['is_on_sale'] = false;
+            $data['discount_percent'] = 0;
+        }
 
         // Format all images
         if ($product->relationLoaded('images')) {
@@ -289,6 +381,11 @@ class MarketplaceController extends Controller
                 'store_slug'        => $vendor->store_slug,
                 'store_logo'        => $vendor->store_logo,
                 'is_verified'       => (bool) $vendor->is_verified,
+                'city'              => $vendor->city,
+                'province'          => $vendor->province,
+                'island_group'      => $vendor->island_group,
+                'local_area'        => $vendor->local_area,
+                'address'           => $vendor->address,
             ];
         }
 

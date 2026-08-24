@@ -7,12 +7,17 @@ use App\Models\Tournament;
 use App\Models\TournamentParticipant;
 use App\Models\TournamentPost;
 use App\Services\TournamentRankingService;
+use App\Services\TournamentRegistrationService;
+use App\Support\OptionalBearerUser;
 use Illuminate\Http\Request;
+use RuntimeException;
 
 class TournamentController extends Controller
 {
-    public function __construct(private TournamentRankingService $ranking)
-    {
+    public function __construct(
+        private TournamentRankingService $ranking,
+        private TournamentRegistrationService $registration,
+    ) {
     }
 
     /**
@@ -22,7 +27,10 @@ class TournamentController extends Controller
     public function index(Request $request)
     {
         $query = Tournament::with('media')
-                            ->withCount(['participants', 'posts']);
+                            ->withCount([
+                                'participants as participants_count' => fn ($q) => $q->active(),
+                                'posts',
+                            ]);
 
         if ($status = $request->query('status')) {
             $query->where('status', $status);
@@ -33,7 +41,7 @@ class TournamentController extends Controller
                              ->paginate(15);
 
         // Annotate whether the current authenticated user (if any) is registered.
-        $userId = optional($request->user())->id;
+        $userId = OptionalBearerUser::id($request);
         $tournaments->getCollection()->transform(function ($t) use ($userId) {
             $t->is_registered = $userId ? $t->isParticipant($userId) : false;
             return $t;
@@ -48,11 +56,18 @@ class TournamentController extends Controller
     public function show(Request $request, $id)
     {
         $tournament = Tournament::with(['media'])
-                                ->withCount(['participants', 'posts'])
+                                ->withCount([
+                                    'participants as participants_count' => fn ($q) => $q->active(),
+                                    'posts',
+                                ])
                                 ->findOrFail($id);
 
-        $userId = optional($request->user())->id;
-        $tournament->is_registered = $userId ? $tournament->isParticipant($userId) : false;
+        $userId = OptionalBearerUser::id($request);
+        $mine = $userId
+            ? $tournament->participants()->where('user_id', $userId)->first()
+            : null;
+        $tournament->is_registered = $mine?->isSettled() ?? false;
+        $tournament->payment_status = $mine?->payment_status;
 
         return response()->json([
             'tournament' => $tournament,
@@ -82,61 +97,80 @@ class TournamentController extends Controller
     public function register(Request $request, $id)
     {
         $tournament = Tournament::findOrFail($id);
-        $userId = $request->user()->id;
 
-        if (in_array($tournament->status, ['completed', 'cancelled'], true)) {
-            return response()->json([
-                'message' => 'Registration is closed for this tournament.',
-            ], 422);
+        try {
+            $payload = $this->registration->register($request, $tournament);
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
         }
 
-        if ($tournament->registration_deadline
-            && now()->greaterThan($tournament->registration_deadline)
-        ) {
-            return response()->json([
-                'message' => 'The registration deadline has passed.',
-            ], 422);
+        $status = ! empty($payload['already_registered']) ? 200 : 201;
+
+        return response()->json($payload, $status);
+    }
+
+    /**
+     * POST /api/tournaments/{id}/register/sync  (auth)
+     */
+    public function syncRegister(Request $request, $id)
+    {
+        $tournament = Tournament::findOrFail($id);
+
+        try {
+            return response()->json(
+                $this->registration->sync($request->user(), $tournament)
+            );
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+    }
+
+    /**
+     * GET /api/tournaments/checkout/return  (public)
+     */
+    public function checkoutReturn(Request $request)
+    {
+        $ref = (string) $request->query('ref', '');
+        $status = (string) $request->query('status', 'success');
+        $participant = $ref !== ''
+            ? TournamentParticipant::where('reference_number', $ref)->first()
+            : null;
+
+        if ($participant && $status === 'success') {
+            $this->registration->refreshFromPayMongo($participant);
+            $participant->refresh();
         }
 
-        if ($tournament->max_participants) {
-            $current = $tournament->participants()
-                                  ->whereIn('status', ['registered', 'confirmed'])
-                                  ->count();
-            if ($current >= $tournament->max_participants) {
-                return response()->json([
-                    'message' => 'This tournament is full.',
-                ], 422);
-            }
+        if ($participant && $status === 'cancel' && $participant->payment_status === 'unpaid') {
+            $this->registration->markCancelled($participant);
+            $participant->refresh();
         }
 
-        $existing = TournamentParticipant::where('tournament_id', $tournament->id)
-                                          ->where('user_id', $userId)
-                                          ->first();
+        $scheme = $status === 'cancel'
+            ? 'bingwitapp://tournament/cancel'
+            : 'bingwitapp://tournament/success';
+        $deep = $scheme.($ref !== '' ? '?ref='.urlencode($ref) : '');
+        $paid = $participant?->isSettled();
+        $title = $paid ? "You're in" : ($status === 'cancel' ? 'Checkout cancelled' : 'Return to Bingwit');
+        $body = $paid
+            ? 'You can close this page and go back to Bingwit.'
+            : ($status === 'cancel'
+                ? 'No charge was made.'
+                : 'If you already paid, your registration will update in the app.');
 
-        if ($existing) {
-            if ($existing->status === 'withdrawn') {
-                $existing->update([
-                    'status'        => 'registered',
-                    'registered_at' => now(),
-                ]);
-            }
-            return response()->json([
-                'message'     => 'You are registered for this tournament!',
-                'participant' => $existing->fresh(),
-            ]);
-        }
-
-        $participant = TournamentParticipant::create([
-            'tournament_id' => $tournament->id,
-            'user_id'       => $userId,
-            'status'        => 'registered',
-            'registered_at' => now(),
-        ]);
-
-        return response()->json([
-            'message'     => 'You are registered for this tournament!',
-            'participant' => $participant,
-        ], 201);
+        return response(
+            '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+            .'<title>'.e($title).'</title>'
+            .'<style>body{font-family:system-ui,sans-serif;background:#F5F1E8;color:#013055;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0}'
+            .'.card{background:#fff;border-radius:20px;padding:28px 24px;max-width:360px;text-align:center;box-shadow:0 10px 30px rgba(1,48,85,.08)}'
+            .'h1{font-size:22px;margin:0 0 8px}p{color:#64748B;line-height:1.5}a{display:inline-block;margin-top:16px;background:#013055;color:#fff;text-decoration:none;padding:12px 18px;border-radius:999px;font-weight:600}</style>'
+            .'<meta http-equiv="refresh" content="0;url='.e($deep).'"></head><body><div class="card">'
+            .'<h1>'.e($title).'</h1><p>'.e($body).'</p>'
+            .'<a href="'.e($deep).'">Back to Bingwit</a></div>'
+            .'<script>location.replace('.json_encode($deep).');</script></body></html>',
+            200,
+            ['Content-Type' => 'text/html; charset=UTF-8']
+        );
     }
 
     /**
@@ -165,38 +199,57 @@ class TournamentController extends Controller
 
     /**
      * GET /api/feed/announcements  (public)
-     * Cross-posted tournament posts that leak into the global feed.
-     * Returned separately from the catch feed so the PWA can render
-     * them as an announcement banner above the main feed.
+     * Cross-posted tournament posts shown as Join Challenge cards in the app feed.
      */
-    public function announcements()
+    public function announcements(Request $request)
     {
+        $userId = OptionalBearerUser::id($request);
+
         $posts = TournamentPost::announcements()
                                 ->whereHas('tournament', function ($q) {
-                                    $q->whereIn('status', ['open', 'active'])
+                                    $q->whereIn('status', ['upcoming', 'open', 'active'])
                                       ->where(function ($inner) {
                                           $inner->whereNull('ends_at')
                                                 ->orWhere('ends_at', '>=', now());
                                       });
                                 })
-                                ->with([
-                                    'tournament:id,name,slug,cover_image,status,ends_at',
-                                    'admin:id,name,profile_picture',
-                                ])
+                                ->with(['tournament.media'])
                                 ->latest()
-                                ->limit(10)
+                                ->limit(40)
                                 ->get()
-                                ->map(fn (TournamentPost $post) => [
-                                    'id'                 => $post->id,
-                                    'tournament_id'      => $post->tournament_id,
-                                    'title'              => $post->title,
-                                    'body'               => $post->body,
-                                    'cross_post_to_feed' => $post->cross_post_to_feed,
-                                    'created_at'         => $post->created_at,
-                                    'updated_at'         => $post->updated_at,
-                                    'tournament'         => $post->tournament,
-                                    'admin'              => $post->admin,
-                                ]);
+                                ->unique('tournament_id')
+                                ->take(5)
+                                ->values()
+                                ->map(function (TournamentPost $post) use ($userId) {
+                                    $tournament = $post->tournament;
+
+                                    return [
+                                        'id'            => $post->id,
+                                        'tournament_id' => $post->tournament_id,
+                                        'title'         => $post->title ?: $tournament?->name,
+                                        'body'          => $post->body,
+                                        'created_at'    => $post->created_at,
+                                        'tournament'    => $tournament ? [
+                                            'id'            => $tournament->id,
+                                            'name'          => $tournament->name,
+                                            'slug'          => $tournament->slug,
+                                            'location'      => $tournament->location,
+                                            'cover_url'     => $tournament->cover_url,
+                                            'status'        => $tournament->status,
+                                            'starts_at'     => $tournament->starts_at,
+                                            'ends_at'       => $tournament->ends_at,
+                                            'prize_pool'    => $tournament->prize_pool,
+                                            'entry_fee'     => $tournament->entry_fee,
+                                            'max_participants' => $tournament->max_participants,
+                                            'participants_count' => $tournament->participants()
+                                                ->active()
+                                                ->count(),
+                                            'is_registered' => $userId
+                                                ? $tournament->isParticipant($userId)
+                                                : false,
+                                        ] : null,
+                                    ];
+                                });
 
         return response()->json([
             'data' => $posts,

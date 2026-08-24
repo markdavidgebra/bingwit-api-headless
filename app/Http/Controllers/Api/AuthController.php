@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Admin;
 use App\Models\User;
 use App\Models\Vendor;
+use App\Services\ReferralService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
@@ -16,11 +17,12 @@ class AuthController extends Controller
     public function register(Request $request)
     {
         $request->validate([
-            'name'          => 'required|string|max:255',
-            'email'         => 'required|string|email|unique:users,email',
-            'password'      => 'required|string|min:8|confirmed',
-            'fishing_style' => 'nullable|string',
-            'location'      => 'nullable|string',
+            'name'           => 'required|string|max:255',
+            'email'          => 'required|string|email|unique:users,email',
+            'password'       => 'required|string|min:8|confirmed',
+            'fishing_style'  => 'nullable|string',
+            'location'       => 'nullable|string',
+            'referral_code'  => 'nullable|string|max:32',
         ]);
 
         $user = User::create([
@@ -30,6 +32,8 @@ class AuthController extends Controller
             'fishing_style' => $request->fishing_style,
             'location'      => $request->location,
         ]);
+
+        app(ReferralService::class)->applyOnRegister($user, $request->referral_code);
 
         $token = $user->createToken('bingwit-token')->plainTextToken;
 
@@ -110,9 +114,15 @@ class AuthController extends Controller
     // CURRENT AUTHENTICATED ENTITY (user / vendor / admin)
     public function me(Request $request)
     {
+        $account = $request->user();
+        if ($account instanceof User) {
+            $account->ensureReferralCode();
+            $account->refresh();
+        }
+
         return response()->json([
-            'role'    => $this->roleFor($request->user()),
-            'account' => $request->user(),
+            'role'    => $this->roleFor($account),
+            'account' => $account,
         ]);
     }
 
